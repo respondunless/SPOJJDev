@@ -6,114 +6,76 @@ param(
     [string]$TargetHubSiteUrl,
     
     [Parameter(Mandatory = $true)]
-    [string]$TenantId,
+    [string]$Tenant,
     
     [Parameter(Mandatory = $true)]
     [string]$ClientId,
     
     [Parameter(Mandatory = $true)]
-    [string]$ClientSecret,
+    [string]$CertificatePath,
     
-    [Parameter(Mandatory = $false)]
-    [switch]$ClearTargetFirst
+    [Parameter(Mandatory = $true)]
+    [string]$CertificatePassword
 )
 
-Write-Host "🚀 Starting Hub Navigation Copy Process..." -ForegroundColor Green
+# Convert password to secure string
+$certPwd = ConvertTo-SecureString $CertificatePassword -AsPlainText -Force
 
-try {
-    # Connect to source hub using modern auth
-    Write-Host "📡 Connecting to source hub: $SourceHubSiteUrl" -ForegroundColor Cyan
-    $srcConn = Connect-PnPOnline -Url $SourceHubSiteUrl `
-                                 -ClientId $ClientId `
-                                 -ClientSecret $ClientSecret `
-                                 -TenantId $TenantId `
-                                 -ReturnConnection
+Write-Host "Connecting to source hub..." -ForegroundColor Green
+
+# Connect to source hub
+$srcConn = Connect-PnPOnline -Url $SourceHubSiteUrl `
+                             -ClientId $ClientId `
+                             -Tenant $Tenant `
+                             -CertificatePath $CertificatePath `
+                             -CertificatePassword $certPwd `
+                             -ReturnConnection
+
+# Get navigation from source
+$sourceNav = Get-PnPNavigationNode -Location TopNavigationBar -Connection $srcConn
+
+Write-Host "Found $($sourceNav.Count) navigation items" -ForegroundColor Green
+Write-Host "Connecting to target hub..." -ForegroundColor Green
+
+# Connect to target hub
+$targetConn = Connect-PnPOnline -Url $TargetHubSiteUrl `
+                                -ClientId $ClientId `
+                                -Tenant $Tenant `
+                                -CertificatePath $CertificatePath `
+                                -CertificatePassword $certPwd `
+                                -ReturnConnection
+
+# Copy each navigation item
+foreach ($navItem in $sourceNav) {
+    Write-Host "Copying: $($navItem.Title)" -ForegroundColor Cyan
     
-    # Get navigation from source
-    Write-Host "📋 Retrieving navigation from source hub..." -ForegroundColor Cyan
-    $sourceNav = Get-PnPNavigationNode -Location TopNavigationBar -Connection $srcConn
+    # Add main nav item
+    $newNavItem = Add-PnPNavigationNode -Title $navItem.Title `
+                                       -Url $navItem.Url `
+                                       -Location TopNavigationBar `
+                                       -External:$navItem.IsExternal `
+                                       -Connection $targetConn
     
-    if ($sourceNav.Count -eq 0) {
-        Write-Warning "⚠️ No navigation items found in source hub!"
-        return
+    # Get and copy sub-items
+    $childItems = Get-PnPNavigationNode -Location TopNavigationBar -Connection $srcConn | Where-Object { $_.ParentId -eq $navItem.Id }
+    
+    foreach ($childItem in $childItems) {
+        Write-Host "  Adding sub-item: $($childItem.Title)" -ForegroundColor Gray
+        Add-PnPNavigationNode -Title $childItem.Title `
+                             -Url $childItem.Url `
+                             -Location TopNavigationBar `
+                             -Parent $newNavItem.Id `
+                             -External:$childItem.IsExternal `
+                             -Connection $targetConn
     }
-    
-    Write-Host "✅ Found $($sourceNav.Count) navigation items in source" -ForegroundColor Green
-    
-    # Connect to target hub
-    Write-Host "📡 Connecting to target hub: $TargetHubSiteUrl" -ForegroundColor Cyan
-    $targetConn = Connect-PnPOnline -Url $TargetHubSiteUrl `
-                                    -ClientId $ClientId `
-                                    -ClientSecret $ClientSecret `
-                                    -TenantId $TenantId `
-                                    -ReturnConnection
-    
-    # Clear target navigation if requested
-    if ($ClearTargetFirst) {
-        Write-Host "🧹 Clearing existing navigation from target hub..." -ForegroundColor Yellow
-        $existingNav = Get-PnPNavigationNode -Location TopNavigationBar -Connection $targetConn
-        foreach ($navItem in $existingNav) {
-            Write-Host "  Removing: $($navItem.Title)" -ForegroundColor DarkYellow
-            Remove-PnPNavigationNode -Identity $navItem.Id -Connection $targetConn -Force
-        }
-    }
-    
-    # Copy navigation items
-    Write-Host "📤 Copying navigation items to target hub..." -ForegroundColor Cyan
-    
-    foreach ($navItem in $sourceNav) {
-        Write-Host "  ➕ Adding: $($navItem.Title) → $($navItem.Url)" -ForegroundColor White
-        
-        try {
-            # Add main navigation item
-            $newNavItem = Add-PnPNavigationNode -Title $navItem.Title `
-                                               -Url $navItem.Url `
-                                               -Location TopNavigationBar `
-                                               -External:$navItem.IsExternal `
-                                               -Connection $targetConn
-            
-            # Check for child items (sub-navigation)
-            $childItems = Get-PnPNavigationNode -Location TopNavigationBar -Connection $srcConn | 
-                         Where-Object { $_.ParentId -eq $navItem.Id }
-            
-            if ($childItems) {
-                Write-Host "    📁 Found $($childItems.Count) sub-items" -ForegroundColor DarkCyan
-                foreach ($childItem in $childItems) {
-                    Write-Host "      ➕ Adding sub-item: $($childItem.Title)" -ForegroundColor Gray
-                    Add-PnPNavigationNode -Title $childItem.Title `
-                                         -Url $childItem.Url `
-                                         -Location TopNavigationBar `
-                                         -Parent $newNavItem.Id `
-                                         -External:$childItem.IsExternal `
-                                         -Connection $targetConn
-                }
-            }
-        }
-        catch {
-            Write-Error "❌ Failed to add '$($navItem.Title)': $($_.Exception.Message)"
-        }
-    }
-    
-    Write-Host "🎉 Navigation copy completed successfully!" -ForegroundColor Green
-    Write-Host "🔗 Check your target hub: $TargetHubSiteUrl" -ForegroundColor Green
-}
-catch {
-    Write-Error "💥 Script failed: $($_.Exception.Message)"
-}
-finally {
-    # Clean up connections
-    if ($srcConn) { Disconnect-PnPOnline -Connection $srcConn }
-    if ($targetConn) { Disconnect-PnPOnline -Connection $targetConn }
 }
 
+Write-Host "Navigation copy completed!" -ForegroundColor Green
 
-
-
-
-
-.\Copy-HubNav.ps1 -SourceHubSiteUrl "https://<tenant>.sharepoint.com/sites/SourceHub" `
-                 -TargetHubSiteUrl "https://<tenant>.sharepoint.com/sites/TargetHub" `
-                 -TenantId "<YOUR-TENANT-ID>" `
-                 -ClientId "<YOUR-APP-CLIENT-ID>" `
-                 -ClientSecret "<YOUR-APP-SECRET>"
-                 
+and run it 
+.\Copy-HubNav-Simple.ps1 -SourceHubSiteUrl "https://yourtenant.sharepoint.com/sites/SourceHub" `
+                         -TargetHubSiteUrl "https://yourtenant.sharepoint.com/sites/TargetHub" `
+                         -Tenant "yourtenant.onmicrosoft.com" `
+                         -ClientId "your-client-id-here" `
+                         -CertificatePath "C:\path\to\your\cert.pfx" `
+                         -CertificatePassword "your-cert-password"
