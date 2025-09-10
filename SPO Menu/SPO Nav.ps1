@@ -29,7 +29,9 @@ $srcConn = Connect-PnPOnline -Url $SourceHubSiteUrl `
                              -CertificatePassword $certPwd `
                              -ReturnConnection
 
-$sourceNav = Get-PnPNavigationNode -Location TopNavigationBar -Connection $srcConn
+# Get mega menu structure via REST API
+$menuState = Invoke-PnPSPRestMethod -Url "/_api/navigation/menuState?mapId='GlobalNavSiteMapProvider'" -Method Get -Connection $srcConn
+$sourceNav = $menuState.value.Nodes
 
 Write-Host "✅ Found $($sourceNav.Count) navigation items in source" -ForegroundColor Green
 
@@ -48,34 +50,33 @@ function Copy-NavNodeRecursively {
     param (
         $SourceNode,
         $TargetParentId,
-        $srcConn,
         $targetConn
     )
 
     Write-Host "➕ Adding: $($SourceNode.Title)" -ForegroundColor Cyan
 
     $newNode = Add-PnPNavigationNode -Title $SourceNode.Title `
-                                     -Url $SourceNode.Url `
+                                     -Url $SourceNode.SimpleUrl `
                                      -Location TopNavigationBar `
                                      -Parent $TargetParentId `
                                      -External:$SourceNode.IsExternal `
                                      -Connection $targetConn
 
-    # Get children of this source node
-    $childNodes = Get-PnPNavigationNode -Location TopNavigationBar -Connection $srcConn | Where-Object { $_.ParentId -eq $SourceNode.Id }
-
-    foreach ($child in $childNodes) {
-        Write-Host "   ↳ SubItem: $($child.Title)" -ForegroundColor Gray
-        Copy-NavNodeRecursively -SourceNode $child -TargetParentId $newNode.Id -srcConn $srcConn -targetConn $targetConn
+    # Process children if they exist
+    if ($null -ne $SourceNode.Children -and $SourceNode.Children.Count -gt 0) {
+        foreach ($child in $SourceNode.Children) {
+            Write-Host "   ↳ SubItem: $($child.Title)" -ForegroundColor Gray
+            Copy-NavNodeRecursively -SourceNode $child -TargetParentId $newNode.Id -targetConn $targetConn
+        }
     }
 }
 
 # -------------------------------
 # Copy all root nodes + recurse
 # -------------------------------
-foreach ($navItem in $sourceNav | Where-Object { $_.ParentId -eq 0 }) {
+foreach ($navItem in $sourceNav) {
     Write-Host "`n📂 Root: $($navItem.Title)" -ForegroundColor Yellow
-    Copy-NavNodeRecursively -SourceNode $navItem -TargetParentId 0 -srcConn $srcConn -targetConn $targetConn
+    Copy-NavNodeRecursively -SourceNode $navItem -TargetParentId 0 -targetConn $targetConn
 }
 
 Write-Host "`n🎉 Navigation copy completed (all levels)!" -ForegroundColor Green
