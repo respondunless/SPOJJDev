@@ -1,4 +1,3 @@
-
 param(
     [Parameter(Mandatory = $true)]
     [string]$SourceHubSiteUrl,
@@ -30,36 +29,26 @@ $srcConn = Connect-PnPOnline -Url $SourceHubSiteUrl `
                              -CertificatePassword $certPwd `
                              -ReturnConnection
 
-# Get the complete menu state from source
 Write-Host "📥 Reading navigation from source hub..." -ForegroundColor Yellow
-$sourceMenuState = Invoke-PnPSPRestMethod -Url "/_api/navigation/menuState?mapId=''GlobalNavSiteMapProvider''" -Method Get -Connection $srcConn
 
-Write-Host "✅ Found navigation structure with $($sourceMenuState.Nodes.Count) root items" -ForegroundColor Green
+try {
+    # Get the raw JSON string directly to avoid object cycles
+    # This is the key fix - using -Raw parameter to get pure JSON string
+    $rawMenuStateJson = Invoke-PnPSPRestMethod -Url "/_api/navigation/menuState?mapId='GlobalNavSiteMapProvider'" `
+                                               -Method Get `
+                                               -Connection $srcConn `
+                                               -Raw
 
-# Function to update URLs in navigation nodes recursively
-function Update-NavigationUrls {
-    param(
-        $Node,
-        [string]$SourceSiteUrl,
-        [string]$TargetSiteUrl
-    )
+    Write-Host "✅ Successfully retrieved navigation JSON ($($rawMenuStateJson.Length) characters)" -ForegroundColor Green
 
-    if ($Node.SimpleUrl -and $Node.SimpleUrl.StartsWith($SourceSiteUrl)) {
-        $Node.SimpleUrl = $Node.SimpleUrl.Replace($SourceSiteUrl, $TargetSiteUrl)
-        Write-Host "   🔄 Updated URL: $($Node.SimpleUrl)" -ForegroundColor Gray
-    }
+    # Parse the JSON to count nodes for display
+    $menuStateObj = $rawMenuStateJson | ConvertFrom-Json
+    Write-Host "✅ Found $($menuStateObj.Nodes.Count) root navigation items" -ForegroundColor Green
 
-    if ($Node.Children -and $Node.Children.Count -gt 0) {
-        foreach ($child in $Node.Children) {
-            Update-NavigationUrls -Node $child -SourceSiteUrl $SourceSiteUrl -TargetSiteUrl $TargetSiteUrl
-        }
-    }
-}
-
-# Update any site-specific URLs in the navigation
-Write-Host "🔄 Updating navigation URLs for target site..." -ForegroundColor Yellow
-foreach ($node in $sourceMenuState.Nodes) {
-    Update-NavigationUrls -Node $node -SourceSiteUrl $SourceHubSiteUrl -TargetSiteUrl $TargetHubSiteUrl
+} catch {
+    Write-Host "❌ Error reading navigation from source:" -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor Red
+    exit 1
 }
 
 Write-Host "🔗 Connecting to target hub: $TargetHubSiteUrl" -ForegroundColor Green
@@ -70,45 +59,51 @@ $targetConn = Connect-PnPOnline -Url $TargetHubSiteUrl `
                                 -CertificatePassword $certPwd `
                                 -ReturnConnection
 
-# Prepare the menu state for saving
 Write-Host "📤 Preparing navigation data for target hub..." -ForegroundColor Yellow
 
-# Convert the menu state to JSON string (this is critical!)
-$menuStateJson = $sourceMenuState | ConvertTo-Json -Depth 20 -Compress
-
-# Create the proper envelope for SaveMenuState API
+# Create the proper JSON envelope that SaveMenuState expects
+# Based on research: SaveMenuState expects { "menuState": "<json-string>" }
 $savePayload = @{
-    menuState = $menuStateJson
-} | ConvertTo-Json -Depth 21
+    menuState = $rawMenuStateJson
+} | ConvertTo-Json -Depth 2 -Compress
 
 Write-Host "💾 Saving navigation to target hub..." -ForegroundColor Yellow
 
 try {
-    # Save the menu state to target hub
+    # Use -Content parameter (not -Body) and proper Content-Type
     $result = Invoke-PnPSPRestMethod -Url "/_api/navigation/SaveMenuState" `
                                      -Method Post `
                                      -ContentType "application/json;odata=verbose" `
-                                     -Body $savePayload `
+                                     -Content $savePayload `
                                      -Connection $targetConn
 
     Write-Host "🎉 Hub navigation successfully copied!" -ForegroundColor Green
     Write-Host "   ✅ All navigation levels preserved" -ForegroundColor Green
-    Write-Host "   ✅ URLs updated for target site" -ForegroundColor Green
+    Write-Host "   ✅ Navigation structure maintained" -ForegroundColor Green
+
+    # Display result details if available
+    if ($result) {
+        Write-Host "   ✅ Server response received" -ForegroundColor Green
+    }
 
 } catch {
-    Write-Host "❌ Error saving navigation:" -ForegroundColor Red
+    Write-Host "❌ Error saving navigation to target:" -ForegroundColor Red
     Write-Host $_.Exception.Message -ForegroundColor Red
 
     # Additional debugging info
     Write-Host "`n🔍 Debug Info:" -ForegroundColor Yellow
-    Write-Host "Menu state size: $($menuStateJson.Length) characters" -ForegroundColor Gray
+    Write-Host "Source JSON size: $($rawMenuStateJson.Length) characters" -ForegroundColor Gray
     Write-Host "Payload size: $($savePayload.Length) characters" -ForegroundColor Gray
+    Write-Host "Target URL: $TargetHubSiteUrl" -ForegroundColor Gray
+
+    exit 1
 }
 
 Write-Host "`n📋 Summary:" -ForegroundColor Cyan
 Write-Host "Source: $SourceHubSiteUrl" -ForegroundColor Gray
 Write-Host "Target: $TargetHubSiteUrl" -ForegroundColor Gray
-Write-Host "Navigation items copied: $($sourceMenuState.Nodes.Count)" -ForegroundColor Gray
+Write-Host "Navigation items copied: $($menuStateObj.Nodes.Count)" -ForegroundColor Gray
+Write-Host "`n🔄 Please refresh your target hub site to see the changes" -ForegroundColor Yellow
 
 
 and run it 
