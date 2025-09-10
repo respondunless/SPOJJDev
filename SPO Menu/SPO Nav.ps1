@@ -18,12 +18,10 @@ param(
     [string]$CertificatePassword
 )
 
-# Convert password to secure string
+# Convert password to SecureString
 $certPwd = ConvertTo-SecureString $CertificatePassword -AsPlainText -Force
 
-Write-Host "Connecting to source hub..." -ForegroundColor Green
-
-# Connect to source hub
+Write-Host "🔗 Connecting to source hub: $SourceHubSiteUrl" -ForegroundColor Green
 $srcConn = Connect-PnPOnline -Url $SourceHubSiteUrl `
                              -ClientId $ClientId `
                              -Tenant $Tenant `
@@ -31,13 +29,11 @@ $srcConn = Connect-PnPOnline -Url $SourceHubSiteUrl `
                              -CertificatePassword $certPwd `
                              -ReturnConnection
 
-# Get navigation from source
 $sourceNav = Get-PnPNavigationNode -Location TopNavigationBar -Connection $srcConn
 
-Write-Host "Found $($sourceNav.Count) navigation items" -ForegroundColor Green
-Write-Host "Connecting to target hub..." -ForegroundColor Green
+Write-Host "✅ Found $($sourceNav.Count) navigation items in source" -ForegroundColor Green
 
-# Connect to target hub
+Write-Host "🔗 Connecting to target hub: $TargetHubSiteUrl" -ForegroundColor Green
 $targetConn = Connect-PnPOnline -Url $TargetHubSiteUrl `
                                 -ClientId $ClientId `
                                 -Tenant $Tenant `
@@ -45,32 +41,44 @@ $targetConn = Connect-PnPOnline -Url $TargetHubSiteUrl `
                                 -CertificatePassword $certPwd `
                                 -ReturnConnection
 
-# Copy each navigation item
-foreach ($navItem in $sourceNav) {
-    Write-Host "Copying: $($navItem.Title)" -ForegroundColor Cyan
-    
-    # Add main nav item
-    $newNavItem = Add-PnPNavigationNode -Title $navItem.Title `
-                                       -Url $navItem.Url `
-                                       -Location TopNavigationBar `
-                                       -External:$navItem.IsExternal `
-                                       -Connection $targetConn
-    
-    # Get and copy sub-items
-    $childItems = Get-PnPNavigationNode -Location TopNavigationBar -Connection $srcConn | Where-Object { $_.ParentId -eq $navItem.Id }
-    
-    foreach ($childItem in $childItems) {
-        Write-Host "  Adding sub-item: $($childItem.Title)" -ForegroundColor Gray
-        Add-PnPNavigationNode -Title $childItem.Title `
-                             -Url $childItem.Url `
-                             -Location TopNavigationBar `
-                             -Parent $newNavItem.Id `
-                             -External:$childItem.IsExternal `
-                             -Connection $targetConn
+# -------------------------------
+# Recursive Copy Function
+# -------------------------------
+function Copy-NavNodeRecursively {
+    param (
+        $SourceNode,
+        $TargetParentId,
+        $srcConn,
+        $targetConn
+    )
+
+    Write-Host "➕ Adding: $($SourceNode.Title)" -ForegroundColor Cyan
+
+    $newNode = Add-PnPNavigationNode -Title $SourceNode.Title `
+                                     -Url $SourceNode.Url `
+                                     -Location TopNavigationBar `
+                                     -Parent $TargetParentId `
+                                     -External:$SourceNode.IsExternal `
+                                     -Connection $targetConn
+
+    # Get children of this source node
+    $childNodes = Get-PnPNavigationNode -Location TopNavigationBar -Connection $srcConn | Where-Object { $_.ParentId -eq $SourceNode.Id }
+
+    foreach ($child in $childNodes) {
+        Write-Host "   ↳ SubItem: $($child.Title)" -ForegroundColor Gray
+        Copy-NavNodeRecursively -SourceNode $child -TargetParentId $newNode.Id -srcConn $srcConn -targetConn $targetConn
     }
 }
 
-Write-Host "Navigation copy completed!" -ForegroundColor Green
+# -------------------------------
+# Copy all root nodes + recurse
+# -------------------------------
+foreach ($navItem in $sourceNav | Where-Object { $_.ParentId -eq 0 }) {
+    Write-Host "`n📂 Root: $($navItem.Title)" -ForegroundColor Yellow
+    Copy-NavNodeRecursively -SourceNode $navItem -TargetParentId 0 -srcConn $srcConn -targetConn $targetConn
+}
+
+Write-Host "`n🎉 Navigation copy completed (all levels)!" -ForegroundColor Green
 
 and run it 
 .\Copy-HubNav-Simple.ps1 -SourceHubSiteUrl "https://yourtenant.sharepoint.com/sites/SourceHub" `
