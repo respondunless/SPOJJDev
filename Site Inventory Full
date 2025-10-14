@@ -638,5 +638,5 @@ if ($results.Count -gt 0) {
 
 
 
-# Modify line 60 to test on one site:
+# Modify line 90 to test on one site:
 $allSites = Get-SPSite "http://yourtestsite"
