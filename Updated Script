@@ -1,9 +1,9 @@
 # ============================================================================
-# SharePoint 2019 Migration Inventory Script - CORRECTED VERSION
+# SharePoint 2019 Migration Inventory Script - ENHANCED VERSION
 # ============================================================================
 # Purpose: Comprehensive site collection and web inventory for migration planning
 # Requires: SharePoint 2019 Management Shell (Run as Administrator)
-# Output: CSV file with detailed metrics, customizations, and migration blockers
+# Output: CSV files with detailed metrics, customizations, and migration blockers
 #
 # EXCLUSIONS:
 # - MySite Host site collections (SPSMSITEHOST template)
@@ -11,6 +11,14 @@
 # - Theme Gallery files
 # - Style Library system files
 # - Files under 5MB in Top10LargestFiles
+#
+# NEW FEATURES:
+# - Per-library item and folder statistics
+# - Large library detection (>10,000 items)
+# - Large folder detection (>5,000 items per folder)
+# - Deep folder structure detection (>10 levels)
+# - URL length warnings (>260 and >400 characters)
+# - Three output CSVs: Main inventory, Library stats, URL/Depth issues
 # ============================================================================
 
 Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue
@@ -19,12 +27,21 @@ Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue
 $OutputFolder = "C:\Temp"
 $CsvPath      = Join-Path $OutputFolder "SP2019_MigrationInventory.csv"
 $ErrorLog     = Join-Path $OutputFolder "SP2019_MigrationInventory_Errors.log"
+$LibStatsCsv  = Join-Path $OutputFolder "SP2019_LibraryStats.csv"
+$UrlIssuesCsv = Join-Path $OutputFolder "SP2019_UrlDepthIssues.csv"
 
 # Performance tuning: cap deep scans per list to avoid timeouts
 $MaxFilesToScanPerList = 1000  # For file name validation and size checks
 $MaxItemsToScanPerList = 5000  # For general item enumeration
 $MaxUnghostedPagesToScan = 500 # Cap unghosted pages scan to avoid timeout
 $MinFileSizeMB = 5             # Minimum file size for Top10LargestFiles tracking
+
+# Library/URL analysis thresholds
+$LargeLibraryThreshold = 10000
+$LargeViewFolderThreshold = 5000
+$DeepFolderDepthThreshold = 10
+$UrlWarnLength1 = 260
+$UrlWarnLength2 = 400
 # --------------------------------------------------
 
 # Create output folder if needed
@@ -38,6 +55,8 @@ if (-not (Test-Path $OutputFolder)) {
 "=" * 80 | Out-File $ErrorLog -Append
 
 $results = New-Object System.Collections.Generic.List[object]
+$libraryStats = New-Object System.Collections.Generic.List[object]
+$urlDepthIssues = New-Object System.Collections.Generic.List[object]
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -63,6 +82,17 @@ function Get-CleanLoginName {
     }
     
     return $LoginName
+}
+
+# Helper function: Calculate path depth from server-relative URL
+function Get-ServerRelativeDepth {
+    param([string]$ServerRelativeUrl)
+    
+    if ([string]::IsNullOrWhiteSpace($ServerRelativeUrl)) { return 0 }
+    
+    # Split on '/' and count non-empty segments
+    $parts = $ServerRelativeUrl -split '/' | Where-Object { $_ }
+    return ($parts | Measure-Object).Count
 }
 
 # Helper function: Check for invalid file names and characters
@@ -141,7 +171,7 @@ try {
                        -Id 0
 
         try {
-            # ========== SITE COLLECTION LEVEL DATA ==========
+            # ==========  SITE COLLECTION LEVEL DATA ==========
             $scUrl          = $site.Url
             $scSizeBytes    = $site.Usage.Storage
             $scSizeMB       = [Math]::Round(($scSizeBytes / 1MB), 2)
@@ -344,6 +374,10 @@ try {
                     $versionCountTotal = 0
                     $topLargestFiles = @()
 
+                    # NEW: Per-web library stats and URL/depth issue tracking
+                    $libStatsForWeb = @()
+                    $urlIssuesCountForWeb = 0
+
                     try {
                         $listIndex = 0
                         $totalLists = $web.Lists.Count
@@ -387,9 +421,9 @@ try {
                                 try {
                                     foreach ($wf in $list.WorkflowAssociations) {
                                         if ($wf.IsDeclarative) {
-                                            $sp2013WorkflowsCount++  # Declarative = SP2013/SPD
+                                            $sp2013WorkflowsCount++
                                         } else {
-                                            $sp2010WorkflowsCount++  # Code-based = SP2010
+                                            $sp2010WorkflowsCount++
                                         }
                                     }
                                 } catch {
@@ -404,7 +438,102 @@ try {
                                     }
                                 }
 
-                                # Document library specific checks
+                                # ========== NEW: LIBRARY STATS & FOLDER ANALYSIS ==========
+                                $libIsDoc = $list.BaseType -eq [Microsoft.SharePoint.SPBaseType]::DocumentLibrary
+                                $libServerRelUrl = $list.RootFolder.ServerRelativeUrl
+                                $libItemCount = $itemCount
+                                $libFolderCount = 0
+                                try {
+                                    $libFolderCount = $list.Folders.Count
+                                } catch {
+                                    Write-ErrorLog -Message $_.Exception.Message -Location "Folder Count: $webUrl - $($list.Title)"
+                                }
+                                $libName = $list.Title
+
+                                # Large library flag
+                                $libIsLarge = ($libItemCount -ge $LargeLibraryThreshold)
+
+                                # URL length & depth checks at library root
+                                $libUrlLen = $libServerRelUrl.Length
+                                $libDepth = Get-ServerRelativeDepth -ServerRelativeUrl $libServerRelUrl
+                                $libUrlWarn = ($libUrlLen -ge $UrlWarnLength1) -or ($libUrlLen -ge $UrlWarnLength2)
+                                $libDepthWarn = ($libDepth -ge $DeepFolderDepthThreshold)
+
+                                # Add library stat shell; folder stats appended below
+                                $libStat = [PSCustomObject]@{
+                                    SiteCollectionUrl = $scUrl
+                                    WebUrl            = $webUrl
+                                    ListTitle         = $libName
+                                    ListUrl           = $libServerRelUrl
+                                    BaseType          = $list.BaseType.ToString()
+                                    ItemCount         = $libItemCount
+                                    FolderCount       = $libFolderCount
+                                    LargeLibrary      = $libIsLarge
+                                    UrlLength         = $libUrlLen
+                                    UrlLenWarn260     = ($libUrlLen -ge $UrlWarnLength1)
+                                    UrlLenWarn400     = ($libUrlLen -ge $UrlWarnLength2)
+                                    PathDepth         = $libDepth
+                                    DepthWarn         = $libDepthWarn
+                                    LargestFolderName = ""
+                                    LargestFolderItemCount = 0
+                                    FoldersOverViewThreshold = 0
+                                }
+                                $libStatsForWeb += $libStat
+
+                                # Enumerate folders (guarded)
+                                try {
+                                    $foldersToCheck = $list.Folders
+                                    if ($foldersToCheck -and $foldersToCheck.Count -gt 0) {
+                                        $largestFolderName = ""
+                                        $largestFolderItems = 0
+                                        $foldersOverThreshold = 0
+
+                                        foreach ($folder in $foldersToCheck) {
+                                            try {
+                                                $folderUrl = $folder.ServerRelativeUrl
+                                                $folderItemCount = $folder.ItemCount
+                                                if ($folderItemCount -gt $largestFolderItems) {
+                                                    $largestFolderItems = $folderItemCount
+                                                    $largestFolderName = $folder.Name
+                                                }
+                                                if ($folderItemCount -ge $LargeViewFolderThreshold) {
+                                                    $foldersOverThreshold++
+                                                }
+
+                                                # URL/Depth checks per folder
+                                                $fUrlLen = $folderUrl.Length
+                                                $fDepth = Get-ServerRelativeDepth -ServerRelativeUrl $folderUrl
+                                                if (($fUrlLen -ge $UrlWarnLength1) -or ($fUrlLen -ge $UrlWarnLength2) -or ($fDepth -ge $DeepFolderDepthThreshold)) {
+                                                    $urlDepthIssues.Add([PSCustomObject]@{
+                                                        SiteCollectionUrl = $scUrl
+                                                        WebUrl            = $webUrl
+                                                        ListTitle         = $libName
+                                                        ObjectType        = "Folder"
+                                                        Name              = $folder.Name
+                                                        ServerRelativeUrl = $folderUrl
+                                                        UrlLength         = $fUrlLen
+                                                        UrlLenWarn260     = ($fUrlLen -ge $UrlWarnLength1)
+                                                        UrlLenWarn400     = ($fUrlLen -ge $UrlWarnLength2)
+                                                        PathDepth         = $fDepth
+                                                        DepthWarn         = ($fDepth -ge $DeepFolderDepthThreshold)
+                                                    }) | Out-Null
+                                                    $urlIssuesCountForWeb++
+                                                }
+                                            } catch {
+                                                Write-ErrorLog -Message $_.Exception.Message -Location "Folder Stats: $webUrl - $($list.Title) - $($folder.Name)"
+                                            }
+                                        }
+
+                                        # Update library stat with folder rollups
+                                        $libStat.LargestFolderName = $largestFolderName
+                                        $libStat.LargestFolderItemCount = $largestFolderItems
+                                        $libStat.FoldersOverViewThreshold = $foldersOverThreshold
+                                    }
+                                } catch {
+                                    Write-ErrorLog -Message $_.Exception.Message -Location "Folder Enumeration: $webUrl - $($list.Title)"
+                                }
+
+                                # ========== DOCUMENT LIBRARY SPECIFIC CHECKS ==========
                                 # FILTER: Skip Master Page Gallery and other system libraries
                                 if ($list.BaseType -eq [Microsoft.SharePoint.SPBaseType]::DocumentLibrary -and
                                     $list.RootFolder.ServerRelativeUrl -notlike "*/_catalogs/masterpage*" -and
@@ -459,6 +588,26 @@ try {
                                                     $urlTooLongCount++
                                                 }
 
+                                                # NEW: URL/Depth checks per file
+                                                $fUrlLen = $fileUrl.Length
+                                                $fDepth = Get-ServerRelativeDepth -ServerRelativeUrl $fileUrl
+                                                if (($fUrlLen -ge $UrlWarnLength1) -or ($fUrlLen -ge $UrlWarnLength2) -or ($fDepth -ge $DeepFolderDepthThreshold)) {
+                                                    $urlDepthIssues.Add([PSCustomObject]@{
+                                                        SiteCollectionUrl = $scUrl
+                                                        WebUrl            = $webUrl
+                                                        ListTitle         = $libName
+                                                        ObjectType        = "File"
+                                                        Name              = $fileName
+                                                        ServerRelativeUrl = $fileUrl
+                                                        UrlLength         = $fUrlLen
+                                                        UrlLenWarn260     = ($fUrlLen -ge $UrlWarnLength1)
+                                                        UrlLenWarn400     = ($fUrlLen -ge $UrlWarnLength2)
+                                                        PathDepth         = $fDepth
+                                                        DepthWarn         = ($fDepth -ge $DeepFolderDepthThreshold)
+                                                    }) | Out-Null
+                                                    $urlIssuesCountForWeb++
+                                                }
+
                                                 # FIXED: Track largest files >= 5MB only (top 10 per web)
                                                 if ($fileSizeMB -ge $MinFileSizeMB) {
                                                     if ($topLargestFiles.Count -lt 10) {
@@ -484,7 +633,7 @@ try {
                                                 }
                                             }
                                         } catch {
-                                            # Silently skip inaccessible files (common with checked-out or corrupted items)
+                                            # Silently skip inaccessible files
                                         }
                                     }
                                 }
@@ -572,6 +721,19 @@ try {
                         Write-ErrorLog -Message $_.Exception.Message -Location "Activity Check: $webUrl"
                     }
 
+                    # ========== CONSOLIDATE PER-WEB LIBRARY STATS ==========
+                    foreach ($s in $libStatsForWeb) { $libraryStats.Add($s) | Out-Null }
+
+                    # Build human-readable summary for main CSV
+                    $libSummary = ""
+                    try {
+                        $largeLibs = ($libStatsForWeb | Where-Object { $_.LargeLibrary }).Count
+                        $foldersOver = ($libStatsForWeb | Measure-Object -Property FoldersOverViewThreshold -Sum).Sum
+                        $libSummary = "Libraries: $($libStatsForWeb.Count); LargeLibs(>$LargeLibraryThreshold): $largeLibs; FoldersOverView(>$LargeViewFolderThreshold): $foldersOver"
+                    } catch { 
+                        $libSummary = ""
+                    }
+
                     # ========== BUILD RECORD ==========
                     $record = [PSCustomObject]@{
                         Type                        = if ($isRootWeb) { "Site Collection" } else { "Subsite" }
@@ -592,6 +754,8 @@ try {
                         TotalItemCount              = $totalItemCount
                         ListsOver5kCount            = $listsOver5k
                         LargestListItemCount        = $largestListItemCount
+                        LibraryStatsSummary         = $libSummary
+                        UrlDepthIssuesCount         = $urlIssuesCountForWeb
                         Top10LargestFiles           = $topLargestFilesStr
                         InvalidFileNamesCount       = $invalidFileNamesCount
                         IllegalCharsCount           = $illegalCharsCount
@@ -683,6 +847,50 @@ if ($results.Count -gt 0) {
 } else {
     Write-Warning "No results to export. Check error log: $ErrorLog"
 }
+
+# ============================================================================
+# EXPORT ADDITIONAL REPORTS
+# ============================================================================
+
+# Export library statistics
+if ($libraryStats.Count -gt 0) {
+    $libraryStats | Sort-Object SiteCollectionUrl, WebUrl, ListTitle |
+        Export-Csv -NoTypeInformation -Encoding UTF8 -Path $LibStatsCsv
+    Write-Host "Library stats CSV: $LibStatsCsv" -ForegroundColor Cyan
+    Write-Host "  Total libraries analyzed: $($libraryStats.Count)" -ForegroundColor White
+    
+    $largeLibsTotal = ($libraryStats | Where-Object { $_.LargeLibrary }).Count
+    $urlWarnings = ($libraryStats | Where-Object { $_.UrlLenWarn260 -or $_.UrlLenWarn400 }).Count
+    $depthWarnings = ($libraryStats | Where-Object { $_.DepthWarn }).Count
+    
+    Write-Host "  Large libraries (>$LargeLibraryThreshold items): $largeLibsTotal" -ForegroundColor $(if ($largeLibsTotal -gt 0) { "Yellow" } else { "Green" })
+    Write-Host "  Libraries with URL warnings: $urlWarnings" -ForegroundColor $(if ($urlWarnings -gt 0) { "Yellow" } else { "Green" })
+    Write-Host "  Libraries with depth warnings: $depthWarnings" -ForegroundColor $(if ($depthWarnings -gt 0) { "Yellow" } else { "Green" })
+}
+
+# Export URL/depth issues
+if ($urlDepthIssues.Count -gt 0) {
+    $urlDepthIssues | Sort-Object SiteCollectionUrl, WebUrl, ListTitle, ObjectType |
+        Export-Csv -NoTypeInformation -Encoding UTF8 -Path $UrlIssuesCsv
+    Write-Host "`nURL/Depth issues CSV: $UrlIssuesCsv" -ForegroundColor Cyan
+    Write-Host "  Total items with issues: $($urlDepthIssues.Count)" -ForegroundColor White
+    
+    $filesWithIssues = ($urlDepthIssues | Where-Object { $_.ObjectType -eq "File" }).Count
+    $foldersWithIssues = ($urlDepthIssues | Where-Object { $_.ObjectType -eq "Folder" }).Count
+    $url260Issues = ($urlDepthIssues | Where-Object { $_.UrlLenWarn260 }).Count
+    $url400Issues = ($urlDepthIssues | Where-Object { $_.UrlLenWarn400 }).Count
+    $depthIssues = ($urlDepthIssues | Where-Object { $_.DepthWarn }).Count
+    
+    Write-Host "  Files with issues: $filesWithIssues" -ForegroundColor $(if ($filesWithIssues -gt 0) { "Red" } else { "Green" })
+    Write-Host "  Folders with issues: $foldersWithIssues" -ForegroundColor $(if ($foldersWithIssues -gt 0) { "Red" } else { "Green" })
+    Write-Host "  URL length >260 chars: $url260Issues" -ForegroundColor $(if ($url260Issues -gt 0) { "Red" } else { "Green" })
+    Write-Host "  URL length >400 chars: $url400Issues" -ForegroundColor $(if ($url400Issues -gt 0) { "Red" } else { "Green" })
+    Write-Host "  Path depth >$DeepFolderDepthThreshold levels: $depthIssues" -ForegroundColor $(if ($depthIssues -gt 0) { "Red" } else { "Green" })
+}
+
+Write-Host "`n========================================" -ForegroundColor Green
+Write-Host "ALL REPORTS GENERATED SUCCESSFULLY" -ForegroundColor Green
+Write-Host "========================================`n" -ForegroundColor Green
 
 # ============================================================================
 # END OF SCRIPT
