@@ -1,0 +1,123 @@
+# Requires: SharePoint 2019 Management Shell
+Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue
+
+# -------------------- Settings --------------------
+$OutputFolder = "C:\Temp"
+$CsvPath      = Join-Path $OutputFolder "SP2019_SiteInventory.csv"
+# --------------------------------------------------
+
+if (-not (Test-Path $OutputFolder)) {
+    New-Item -ItemType Directory -Path $OutputFolder | Out-Null
+}
+
+$results = New-Object System.Collections.Generic.List[object]
+
+# Ensure proper disposal of SPSite/SPWeb
+$assignment = Start-SPAssignment
+
+try {
+    Write-Host "Enumerating site collections..." -ForegroundColor Cyan
+    $allSites = Get-SPSite -Limit All
+    $siteCount = $allSites.Count
+    $current = 0
+
+    foreach ($site in $allSites) {
+        $current++
+        Write-Progress -Activity "Processing Site Collections" -Status "$current of $siteCount" -PercentComplete (($current / $siteCount) * 100)
+        
+        try {
+            # Site collection level info
+            $scUrl          = $site.Url
+            $scSizeBytes    = $site.Usage.Storage
+            $scSizeMB       = [Math]::Round(($scSizeBytes / 1MB), 2)
+            $scSizeGB       = [Math]::Round(($scSizeBytes / 1GB), 4)
+            
+            # Site collection owners
+            $scOwners       = @()
+            if ($site.Owner)            { $scOwners += $site.Owner.LoginName }
+            if ($site.SecondaryContact) { $scOwners += $site.SecondaryContact.LoginName }
+            $scOwnersStr    = ($scOwners | Sort-Object -Unique) -join "; "
+
+            # Nintex feature checks at site collection level
+            $nintexFeaturesSC   = $site.Features | Where-Object { $_.Definition.DisplayName -like "*Nintex*" }
+            $HasNintexFeatureSC = [bool]$nintexFeaturesSC
+
+            # Total subsite count (excluding root web)
+            $subsiteCount = $site.AllWebs.Count - 1
+
+            # Iterate all webs (root web + subsites)
+            foreach ($web in $site.AllWebs) {
+                try {
+                    $webTitle   = $web.Title
+                    $webUrl     = $web.Url
+                    $webLastMod = $web.LastItemModifiedDate
+                    $isRootWeb  = $web.IsRootWeb
+
+                    # Nintex checks at web level
+                    $nintexFeaturesWeb   = $web.Features | Where-Object { $_.Definition.DisplayName -like "*Nintex*" }
+                    $HasNintexFeatureWeb = [bool]$nintexFeaturesWeb
+
+                    # Nintex Forms presence heuristic
+                    $nintexFormsList = $null
+                    try { $nintexFormsList = $web.Lists.TryGetList("NintexForms") } catch { }
+                    $HasNintexForms = ($nintexFormsList -ne $null) -or (
+                        ($nintexFeaturesSC + $nintexFeaturesWeb | Where-Object { $_.Definition.DisplayName -like "*Nintex*Form*" }).Count -gt 0
+                    )
+
+                    # Nintex Workflow presence heuristic
+                    $HasNintexWorkflow = $false
+                    $wfFeatureHit = ($nintexFeaturesSC + $nintexFeaturesWeb | Where-Object { $_.Definition.DisplayName -like "*Nintex*Workflow*" })
+                    if ($wfFeatureHit -and $wfFeatureHit.Count -gt 0) {
+                        $HasNintexWorkflow = $true
+                    } else {
+                        try {
+                            $wfGallery = $web.Lists | Where-Object { $_.BaseTemplate -eq [Microsoft.SharePoint.SPListTemplateType]::WorkflowCatalog }
+                            if ($wfGallery) {
+                                $nintexInWfItems = $wfGallery.Items | Where-Object {
+                                    ($_.File -and $_.File.Name -like "*Nintex*") -or
+                                    ($_.Title -like "*Nintex*")
+                                }
+                                if ($nintexInWfItems -and $nintexInWfItems.Count -gt 0) {
+                                    $HasNintexWorkflow = $true
+                                }
+                            }
+                        } catch { }
+                    }
+
+                    # Build record
+                    $record = [PSCustomObject]@{
+                        Type                    = if ($isRootWeb) { "Site Collection" } else { "Subsite" }
+                        SiteName                = $webTitle
+                        SiteUrl                 = $webUrl
+                        SiteCollectionUrl       = $scUrl
+                        SubsiteCount            = if ($isRootWeb) { $subsiteCount } else { "" }
+                        SiteCollectionSizeGB    = if ($isRootWeb) { $scSizeGB } else { "" }
+                        SiteCollectionSizeMB    = if ($isRootWeb) { $scSizeMB } else { "" }
+                        SiteOwners              = if ($isRootWeb) { $scOwnersStr } else { "" }
+                        LastModified            = $webLastMod
+                        NintexFormsDetected     = $HasNintexForms
+                        NintexWorkflowDetected  = $HasNintexWorkflow
+                    }
+                    $results.Add($record) | Out-Null
+                    
+                } finally {
+                    if ($web -and $web.Dispose) { $web.Dispose() }
+                }
+            }
+        } catch {
+            Write-Warning "Error processing site collection $($site.Url): $($_.Exception.Message)"
+        } finally {
+            if ($site -and $site.Dispose) { $site.Dispose() }
+        }
+    }
+
+} finally {
+    Stop-SPAssignment $assignment
+    Write-Progress -Activity "Processing Site Collections" -Completed
+}
+
+# Export CSV
+$results | Sort-Object SiteCollectionUrl, Type -Descending | Export-Csv -NoTypeInformation -Encoding UTF8 -Path $CsvPath
+Write-Host "`nCSV written: $CsvPath" -ForegroundColor Green
+Write-Host "Total rows: $($results.Count)" -ForegroundColor Green
+Write-Host "Site Collections: $siteCount" -ForegroundColor Green
