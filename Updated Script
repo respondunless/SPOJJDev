@@ -10,6 +10,7 @@
 # - Master Page Gallery files (*.master, system *.aspx)
 # - Theme Gallery files
 # - Style Library system files
+# - Files under 5MB in Top10LargestFiles
 # ============================================================================
 
 Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue
@@ -21,8 +22,9 @@ $ErrorLog     = Join-Path $OutputFolder "SP2019_MigrationInventory_Errors.log"
 
 # Performance tuning: cap deep scans per list to avoid timeouts
 $MaxFilesToScanPerList = 1000  # For file name validation and size checks
-$MaxItemsToScanPerList = 5000  # For general item enumeration (now actually used)
+$MaxItemsToScanPerList = 5000  # For general item enumeration
 $MaxUnghostedPagesToScan = 500 # Cap unghosted pages scan to avoid timeout
+$MinFileSizeMB = 5             # Minimum file size for Top10LargestFiles tracking
 # --------------------------------------------------
 
 # Create output folder if needed
@@ -40,6 +42,28 @@ $results = New-Object System.Collections.Generic.List[object]
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
+
+# Helper function: Clean login name (remove domain prefix and backslash)
+function Get-CleanLoginName {
+    param([string]$LoginName)
+
+    if ([string]::IsNullOrEmpty($LoginName)) { return "" }
+
+    # Handle claims-based authentication formats
+    # Examples: i:0#.w|DOMAIN\user, c:0-.f|rolemanager|..., DOMAIN\user
+    
+    # If contains pipe (claims format), take everything after the last pipe
+    if ($LoginName -match '\|') {
+        $LoginName = $LoginName.Substring($LoginName.LastIndexOf('|') + 1)
+    }
+    
+    # If contains backslash, take everything after the last backslash
+    if ($LoginName -match '\\') {
+        $LoginName = $LoginName.Substring($LoginName.LastIndexOf('\') + 1)
+    }
+    
+    return $LoginName
+}
 
 # Helper function: Check for invalid file names and characters
 function Test-InvalidFileName {
@@ -123,20 +147,20 @@ try {
             $scSizeMB       = [Math]::Round(($scSizeBytes / 1MB), 2)
             $scSizeGB       = [Math]::Round(($scSizeBytes / 1GB), 4)
 
-            # Site collection owners
+            # Site collection owners (FIXED: Clean login names)
             $scOwners       = @()
-            if ($site.Owner)            { $scOwners += $site.Owner.LoginName }
-            if ($site.SecondaryContact) { $scOwners += $site.SecondaryContact.LoginName }
-            $scOwnersStr    = ($scOwners | Sort-Object -Unique) -join "; "
+            if ($site.Owner)            { $scOwners += Get-CleanLoginName -LoginName $site.Owner.LoginName }
+            if ($site.SecondaryContact) { $scOwners += Get-CleanLoginName -LoginName $site.SecondaryContact.LoginName }
+            $scOwnersStr    = ($scOwners | Where-Object { $_ -ne "" } | Sort-Object -Unique) -join "; "
 
-            # Site collection admins
+            # Site collection admins (FIXED: Clean login names)
             $scAdmins = @()
             try {
-                $scAdmins = $site.RootWeb.SiteAdministrators | ForEach-Object { $_.LoginName }
+                $scAdmins = $site.RootWeb.SiteAdministrators | ForEach-Object { Get-CleanLoginName -LoginName $_.LoginName }
             } catch {
                 Write-ErrorLog -Message $_.Exception.Message -Location "Site Collection Admins: $scUrl"
             }
-            $scAdminsStr = ($scAdmins | Sort-Object -Unique) -join "; "
+            $scAdminsStr = ($scAdmins | Where-Object { $_ -ne "" } | Sort-Object -Unique) -join "; "
 
             # Quota info
             $quotaTemplate = ""
@@ -292,7 +316,7 @@ try {
                     }
                     $customFeaturesWebStr = ($customFeaturesWeb | ForEach-Object { $_.ToString() }) -join "; "
 
-                    # Unghosted pages count (FIXED: capped to avoid timeout)
+                    # Unghosted pages count (capped to avoid timeout)
                     $unghostedPagesCount = 0
                     try {
                         $pageFiles = $web.Files | Select-Object -First $MaxUnghostedPagesToScan
@@ -349,17 +373,17 @@ try {
                                     $uniquePermObjects++
                                 }
 
-                                # InfoPath detection (FIXED: use enum)
+                                # InfoPath detection
                                 if ($list.BaseTemplate -eq [Microsoft.SharePoint.SPListTemplateType]::XMLForm) {
                                     $infoPathLibrariesCount++
                                 }
 
-                                # BCS External Lists (FIXED: use enum)
+                                # BCS External Lists
                                 if ($list.BaseTemplate -eq [Microsoft.SharePoint.SPListTemplateType]::ExternalList) {
                                     $bcsExternalListsCount++
                                 }
 
-                                # Workflows (FIXED: use IsDeclarative property)
+                                # Workflows
                                 try {
                                     foreach ($wf in $list.WorkflowAssociations) {
                                         if ($wf.IsDeclarative) {
@@ -380,7 +404,7 @@ try {
                                     }
                                 }
 
-                                # Document library specific checks (FIXED: use enum and SPQuery)
+                                # Document library specific checks
                                 # FILTER: Skip Master Page Gallery and other system libraries
                                 if ($list.BaseType -eq [Microsoft.SharePoint.SPBaseType]::DocumentLibrary -and
                                     $list.RootFolder.ServerRelativeUrl -notlike "*/_catalogs/masterpage*" -and
@@ -389,7 +413,7 @@ try {
 
                                     $checkedOutFilesCount += $list.CheckedOutFiles.Count
 
-                                    # FIXED: Use SPQuery for large lists to avoid timeout
+                                    # Use SPQuery for large lists to avoid timeout
                                     $filesToScan = $null
                                     if ($itemCount -le $MaxFilesToScanPerList) {
                                         $filesToScan = $list.Items
@@ -412,6 +436,7 @@ try {
                                                 $fileName = $item.File.Name
                                                 $fileUrl = $item.File.ServerRelativeUrl
                                                 $fileSize = $item.File.Length
+                                                $fileSizeMB = [Math]::Round(($fileSize / 1MB), 2)
 
                                                 # FILTER: Skip master pages, webparts, and system files
                                                 if ($fileName -like "*.master" -or
@@ -434,19 +459,21 @@ try {
                                                     $urlTooLongCount++
                                                 }
 
-                                                # Track largest files (top 10 per web)
-                                                if ($topLargestFiles.Count -lt 10) {
-                                                    $topLargestFiles += [PSCustomObject]@{
-                                                        Name = $fileName
-                                                        SizeMB = [Math]::Round(($fileSize / 1MB), 2)
-                                                    }
-                                                } else {
-                                                    $smallest = ($topLargestFiles | Sort-Object SizeMB | Select-Object -First 1)
-                                                    if ($fileSize -gt ($smallest.SizeMB * 1MB)) {
-                                                        $topLargestFiles = @($topLargestFiles | Where-Object { $_.Name -ne $smallest.Name })
+                                                # FIXED: Track largest files >= 5MB only (top 10 per web)
+                                                if ($fileSizeMB -ge $MinFileSizeMB) {
+                                                    if ($topLargestFiles.Count -lt 10) {
                                                         $topLargestFiles += [PSCustomObject]@{
                                                             Name = $fileName
-                                                            SizeMB = [Math]::Round(($fileSize / 1MB), 2)
+                                                            SizeMB = $fileSizeMB
+                                                        }
+                                                    } else {
+                                                        $smallest = ($topLargestFiles | Sort-Object SizeMB | Select-Object -First 1)
+                                                        if ($fileSizeMB -gt $smallest.SizeMB) {
+                                                            $topLargestFiles = @($topLargestFiles | Where-Object { $_.Name -ne $smallest.Name })
+                                                            $topLargestFiles += [PSCustomObject]@{
+                                                                Name = $fileName
+                                                                SizeMB = $fileSizeMB
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -472,7 +499,7 @@ try {
                         Write-ErrorLog -Message $_.Exception.Message -Location "Lists Enumeration: $webUrl"
                     }
 
-                    # Web-level workflows (FIXED: use IsDeclarative)
+                    # Web-level workflows
                     try {
                         foreach ($wf in $web.WorkflowAssociations) {
                             if ($wf.IsDeclarative) {
@@ -596,7 +623,6 @@ try {
                     Write-Warning "Error processing web $($web.Url): $($_.Exception.Message)"
                     Write-ErrorLog -Message $_.Exception.Message -Location "Web Processing: $($web.Url)"
                 }
-                # FIXED: Removed manual $web.Dispose() - assignment tracking handles this automatically
             }
 
             Write-Progress -Activity "Processing Webs in Site Collection" -Id 1 -Completed
@@ -605,7 +631,6 @@ try {
             Write-Warning "Error processing site collection $($site.Url): $($_.Exception.Message)"
             Write-ErrorLog -Message $_.Exception.Message -Location "Site Collection Processing: $($site.Url)"
         }
-        # FIXED: Removed manual $site.Dispose() - assignment tracking handles this automatically
     }
 
 } catch {
@@ -621,7 +646,7 @@ try {
 # ============================================================================
 
 if ($results.Count -gt 0) {
-    # FIXED: Sort order - Site Collections first, then subsites
+    # Sort order - Site Collections first, then subsites
     $results | Sort-Object SiteCollectionUrl, @{Expression="Type"; Descending=$false} |
         Export-Csv -NoTypeInformation -Encoding UTF8 -Path $CsvPath
 
