@@ -5,14 +5,9 @@
 # Requires: SharePoint 2019 Management Shell (Run as Administrator)
 # Outputs:
 # - SP2019_MigrationInventory.csv         (main, human-friendly)
-# - SP2019_LibraryStats.csv               (per library stats - user libraries only, human-friendly)
-# - SP2019_UrlDepthIssues.csv             (per file/folder URL length and depth issues - user libraries only)
-# - SP2019_MigrationInventory_README.txt  (optional, column definitions)
-#
-# EXCLUSIONS:
-# - MySite Host site collections (SPSMSITEHOST template)
-# - System libraries (/_catalogs/*, Style Library, Site Assets, etc.)
-# - Top10LargestFiles: only files >= 5MB included
+# - SP2019_LibraryStats.csv               (user libraries only, human-friendly)
+# - SP2019_UrlDepthIssues.csv             (user libraries only)
+# - SP2019_MigrationInventory_README.txt  (column definitions)
 # ============================================================================
 
 Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue
@@ -633,7 +628,7 @@ try {
 }
 
 # ============================================================================
-# EXPORT RESULTS (Pretty formatting for LibraryStats too)
+# EXPORT RESULTS
 # ============================================================================
 
 if ($results.Count -gt 0) {
@@ -672,15 +667,14 @@ if ($results.Count -gt 0) {
     }
 
     if ($urlDepthIssues.Count -gt 0) {
-        # Keep url issues as-is (technical), but sort and label
         $urlDepthIssues |
             Sort-Object SiteCollectionUrl, WebUrl, ListTitle, ObjectType, Name |
             Export-Csv -NoTypeInformation -Encoding UTF8 -Path $UrlIssuesCsv
     }
 
-    # Readme with column descriptions (optional)
+    # README (column definitions) written to file, not inline
     if ($WriteReadme) {
-        @"
+@"
 SP2019_MigrationInventory.csv - Column Definitions
 --------------------------------------------------
 Row Type: Whether the row represents the root “Site Collection” or a “Subsite”.
