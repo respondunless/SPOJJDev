@@ -1,0 +1,761 @@
+# ============================================================================
+# SharePoint 2019 Migration Inventory Script - FINAL ENHANCED + Pretty Output
+# ============================================================================
+# Purpose: Comprehensive site collection and web inventory for migration planning
+# Requires: SharePoint 2019 Management Shell (Run as Administrator)
+# Outputs:
+# - SP2019_MigrationInventory.csv         (main, human-friendly)
+# - SP2019_LibraryStats.csv               (per library stats - user libraries only, human-friendly)
+# - SP2019_UrlDepthIssues.csv             (per file/folder URL length and depth issues - user libraries only)
+# - SP2019_MigrationInventory_README.txt  (optional, column definitions)
+#
+# EXCLUSIONS:
+# - MySite Host site collections (SPSMSITEHOST template)
+# - System libraries (/_catalogs/*, Style Library, Site Assets, etc.)
+# - Top10LargestFiles: only files >= 5MB included
+# ============================================================================
+
+Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue
+
+# -------------------- Settings --------------------
+$OutputFolder = "C:\Temp"
+$CsvPath      = Join-Path $OutputFolder "SP2019_MigrationInventory.csv"
+$ErrorLog     = Join-Path $OutputFolder "SP2019_MigrationInventory_Errors.log"
+$LibStatsCsv  = Join-Path $OutputFolder "SP2019_LibraryStats.csv"
+$UrlIssuesCsv = Join-Path $OutputFolder "SP2019_UrlDepthIssues.csv"
+$ReadmePath   = Join-Path $OutputFolder "SP2019_MigrationInventory_README.txt"
+
+# Pretty formatting toggles
+$PrettyOutput = $true
+$WriteReadme  = $true
+
+# Performance tuning
+$MaxFilesToScanPerList    = 1000
+$MaxItemsToScanPerList    = 5000
+$MaxUnghostedPagesToScan  = 500
+$MinFileSizeMB            = 5
+
+# Library/URL analysis thresholds
+$LargeLibraryThreshold     = 10000
+$LargeViewFolderThreshold  = 5000
+$DeepFolderDepthThreshold  = 10
+$UrlWarnLength1            = 260
+$UrlWarnLength2            = 400
+# --------------------------------------------------
+
+# Create output folder if needed
+if (-not (Test-Path $OutputFolder)) { New-Item -ItemType Directory -Path $OutputFolder | Out-Null }
+
+# Initialize error log
+"SharePoint 2019 Migration Inventory - Error Log" | Out-File $ErrorLog
+"Started: $(Get-Date)" | Out-File $ErrorLog -Append
+"=" * 80 | Out-File $ErrorLog -Append
+
+$results       = New-Object System.Collections.Generic.List[object]
+$libraryStats  = New-Object System.Collections.Generic.List[object]
+$urlDepthIssues= New-Object System.Collections.Generic.List[object]
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+function Get-CleanLoginName {
+    param([string]$LoginName)
+    if ([string]::IsNullOrEmpty($LoginName)) { return "" }
+    if ($LoginName -match '\|') { $LoginName = $LoginName.Substring($LoginName.LastIndexOf('|') + 1) }
+    if ($LoginName -match '\\') { $LoginName = $LoginName.Substring($LoginName.LastIndexOf('\') + 1) }
+    return $LoginName
+}
+
+function Get-DisplayName {
+    param($User)
+    try {
+        if ($null -eq $User) { return "" }
+        if ($User.DisplayName -and $User.DisplayName.Trim().Length -gt 0) { return $User.DisplayName.Trim() }
+        if ($User.Name -and $User.Name.Trim().Length -gt 0) { return $User.Name.Trim() }
+        return (Get-CleanLoginName -LoginName $User.LoginName)
+    } catch {
+        return (Get-CleanLoginName -LoginName $User.LoginName)
+    }
+}
+
+function Get-ServerRelativeDepth {
+    param([string]$ServerRelativeUrl)
+    if ([string]::IsNullOrWhiteSpace($ServerRelativeUrl)) { return 0 }
+    $parts = $ServerRelativeUrl -split '/' | Where-Object { $_ }
+    return ($parts | Measure-Object).Count
+}
+
+function Test-IsSystemLibrary {
+    param([Microsoft.SharePoint.SPList]$List)
+    try {
+        $url = $List.RootFolder.ServerRelativeUrl
+        $title = $List.Title
+
+        if ($url -match '/_catalogs/' -or
+            $url -match '/Style Library($|/)' -or
+            $url -match '/Site Assets($|/)' -or
+            $url -match '/Site Pages($|/)' -or
+            $url -match '/Pages($|/)' -or
+            $url -match '/Form Templates($|/)' -or
+            $url -match '/Maintenance Logs($|/)' -or
+            $url -match '/Converted Forms($|/)' -or
+            $url -match '/Relationships List($|/)' -or
+            $url -match '/MicroFeed($|/)' -or
+            $url -match '/Composed Looks($|/)' -or
+            $url -match '/Site Collection Documents($|/)' -or
+            $url -match '/Site Collection Images($|/)') { return $true }
+
+        $sysTitles = @(
+            "Site Assets","Site Pages","Style Library","Form Templates","Pages",
+            "Relationships List","Composed Looks","MicroFeed","Content and Structure Reports",
+            "List Template Gallery","Web Part Gallery","Workflow History","Workflow Tasks",
+            "User Information List","Workflow","Workflow Gallery","Maintenance Logs",
+            "Converted Forms","Reusable Content","Site Collection Documents","Site Collection Images"
+        )
+        if ($sysTitles -contains $title) { return $true }
+
+        $sysTemplates = @(
+            [Microsoft.SharePoint.SPListTemplateType]::WorkflowHistory,
+            [Microsoft.SharePoint.SPListTemplateType]::WorkflowTask,
+            [Microsoft.SharePoint.SPListTemplateType]::WebPartCatalog,
+            [Microsoft.SharePoint.SPListTemplateType]::ListTemplateCatalog,
+            [Microsoft.SharePoint.SPListTemplateType]::ThemeCatalog,
+            [Microsoft.SharePoint.SPListTemplateType]::MasterPageCatalog,
+            [Microsoft.SharePoint.SPListTemplateType]::ContentTypeCatalog,
+            [Microsoft.SharePoint.SPListTemplateType]::DataSources,
+            [Microsoft.SharePoint.SPListTemplateType]::AccessRequest
+        )
+        if ($sysTemplates -contains $List.BaseTemplate) { return $true }
+
+        return $false
+    } catch { return $false }
+}
+
+function Test-InvalidFileName { param([string]$Name)
+    if ([string]::IsNullOrEmpty($Name)) { return $false }
+    $invalidChars = '[*:<>?"|]'
+    $reservedNames = @('CON','PRN','AUX','NUL','COM1','COM2','COM3','COM4','COM5','COM6','COM7','COM8','COM9','LPT1','LPT2','LPT3','LPT4','LPT5','LPT6','LPT7','LPT8','LPT9')
+    $nameOnly = [System.IO.Path]::GetFileNameWithoutExtension($Name)
+    $hasInvalidChars = $Name -match $invalidChars
+    $isReserved = $reservedNames -contains $nameOnly.ToUpper()
+    $endsWithDotOrSpace = $Name -match '\.$|\ $'
+    $hasLeadingTrailingSpace = $Name -match '^\ |\ $'
+    return ($hasInvalidChars -or $isReserved -or $endsWithDotOrSpace -or $hasLeadingTrailingSpace)
+}
+
+function Get-IllegalCharCount { param([string]$Name)
+    if ([string]::IsNullOrEmpty($Name)) { return 0 }
+    $illegalPattern = '[*:<>?"|]'
+    $matches = [regex]::Matches($Name, $illegalPattern)
+    return $matches.Count
+}
+
+function Write-ErrorLog { param([string]$Message,[string]$Location)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    "$timestamp | $Location | $Message" | Out-File $ErrorLog -Append
+}
+
+# Pretty format helpers
+function Format-Bool { param([bool]$b) if ($PrettyOutput) { if ($b) { "Yes" } else { "No" } } else { $b } }
+function Format-Int { param([Nullable[int]]$n) if ($PrettyOutput -and $n -ne $null) { "{0:N0}" -f $n } else { $n } }
+function Format-Long{ param([Nullable[long]]$n) if ($PrettyOutput -and $n -ne $null) { "{0:N0}" -f $n } else { $n } }
+function Format-Decimal { param([Nullable[decimal]]$d; [int]$dp=2) if ($PrettyOutput -and $d -ne $null) { ("{0:N" + $dp + "}") -f $d } else { $d } }
+function Format-Date { param([Nullable[datetime]]$dt) if ($PrettyOutput -and $dt) { $dt.ToString("yyyy-MM-dd HH:mm") } else { $dt } }
+
+# ============================================================================
+# MAIN SCRIPT
+# ============================================================================
+
+$assignment = Start-SPAssignment
+
+try {
+    Write-Host "`n========================================" -ForegroundColor Cyan
+    Write-Host "SharePoint 2019 Migration Inventory" -ForegroundColor Cyan
+    Write-Host "========================================`n" -ForegroundColor Cyan
+
+    Write-Host "Enumerating site collections..." -ForegroundColor Cyan
+    $allSitesRaw = Get-SPSite -Limit All -ErrorAction Stop
+
+    # FILTER: Exclude MySite Host site collections
+    $allSites = $allSitesRaw | Where-Object { $_.RootWeb.WebTemplate -ne "SPSMSITEHOST" }
+
+    $excludedCount = $allSitesRaw.Count - $allSites.Count
+    $siteCount     = $allSites.Count
+    $current       = 0
+
+    Write-Host "Found $($allSitesRaw.Count) total site collection(s)" -ForegroundColor Yellow
+    Write-Host "Excluded $excludedCount MySite Host site collection(s)" -ForegroundColor Yellow
+    Write-Host "Processing $siteCount site collection(s)`n" -ForegroundColor Green
+
+    foreach ($site in $allSites) {
+        $current++
+        $percentComplete = [Math]::Round(($current / $siteCount) * 100, 2)
+        Write-Progress -Activity "Processing Site Collections" -Status "Site $current of $siteCount - $($site.Url)" -PercentComplete $percentComplete -Id 0
+
+        try {
+            # ========== SITE COLLECTION LEVEL ==========
+            $scUrl       = $site.Url
+            $scSizeBytes = $site.Usage.Storage
+            $scSizeMB    = [Math]::Round(($scSizeBytes / 1MB), 2)
+            $scSizeGB    = [Math]::Round(($scSizeBytes / 1GB), 4)
+
+            # Owners and SC admins (Display Names)
+            $scOwnersDisplay = @()
+            if ($site.Owner)            { $scOwnersDisplay += Get-DisplayName $site.Owner }
+            if ($site.SecondaryContact) { $scOwnersDisplay += Get-DisplayName $site.SecondaryContact }
+            $scOwnersStr = ($scOwnersDisplay | Where-Object { $_ } | Sort-Object -Unique) -join "; "
+
+            $scAdminsDisplay = @()
+            try {
+                $scAdminsDisplay = $site.RootWeb.SiteAdministrators | ForEach-Object { Get-DisplayName $_ }
+            } catch { Write-ErrorLog -Message $_.Exception.Message -Location "Site Collection Admins: $scUrl" }
+            $scAdminsStr = ($scAdminsDisplay | Where-Object { $_ } | Sort-Object -Unique) -join "; "
+
+            # Quota info
+            $quotaTemplate    = ""
+            $storageWarningMB = ""
+            try {
+                if ($site.Quota) {
+                    $quotaTemplate = $site.Quota.QuotaID
+                    if ($site.Quota.StorageWarningLevel -gt 0) {
+                        $storageWarningMB = [Math]::Round(($site.Quota.StorageWarningLevel / 1MB), 2)
+                    }
+                }
+            } catch { Write-ErrorLog -Message $_.Exception.Message -Location "Quota Info: $scUrl" }
+
+            # Recycle bin size
+            $recycleBinSizeMB = 0
+            try {
+                $recycleBinSize = ($site.RecycleBin | Measure-Object -Property Size -Sum).Sum
+                if ($recycleBinSize) { $recycleBinSizeMB = [Math]::Round(($recycleBinSize / 1MB), 2) }
+            } catch { Write-ErrorLog -Message $_.Exception.Message -Location "Recycle Bin: $scUrl" }
+
+            # Audit enabled
+            $auditEnabled = $false
+            try { $auditEnabled = $site.Audit.AuditFlags -ne [Microsoft.SharePoint.SPAuditMaskType]::None } catch { Write-ErrorLog -Message $_.Exception.Message -Location "Audit Settings: $scUrl" }
+
+            # Features and solutions
+            $nintexFeaturesSC = @(); $HasNintexFeatureSC = $false
+            try { $nintexFeaturesSC = $site.Features | Where-Object { $_.Definition.DisplayName -like "*Nintex*" }; $HasNintexFeatureSC = [bool]$nintexFeaturesSC } catch { Write-ErrorLog -Message $_.Exception.Message -Location "Nintex Features SC: $scUrl" }
+
+            $customFeaturesSC = @()
+            try { $customFeaturesSC = $site.Features | Where-Object { $_.Definition.Scope -eq "Site" -and -not ($_.DefinitionId -match '^00bfea71-') } | Select-Object -ExpandProperty DefinitionId -Unique } catch { }
+            $customFeaturesSCStr = ($customFeaturesSC | ForEach-Object { $_.ToString() }) -join "; "
+
+            $sandboxSolutionsStr = ""
+            try { $sandboxSolutionsStr = ($site.Solutions | Select-Object -ExpandProperty Name) -join "; " } catch { }
+
+            $subsiteCount = $site.AllWebs.Count - 1
+
+            # ========== ITERATE WEBS ==========
+            $webIndex = 0; $totalWebs = $site.AllWebs.Count
+
+            foreach ($web in $site.AllWebs) {
+                $webIndex++
+                Write-Progress -Activity "Processing Webs in Site Collection" -Status "Web $webIndex of $totalWebs - $($web.Url)" -PercentComplete (($webIndex / $totalWebs) * 100) -ParentId 0 -Id 1
+
+                try {
+                    $webTitle   = $web.Title
+                    $webUrl     = $web.Url
+                    $webLastMod = $web.LastItemModifiedDate
+                    $isRootWeb  = $web.IsRootWeb
+
+                    # Ownership & permissions
+                    $ownersGroupCount    = 0
+                    $ownersGroupMembers  = ""
+                    try {
+                        if ($web.AssociatedOwnerGroup) {
+                            $owners = $web.AssociatedOwnerGroup.Users
+                            $ownersGroupCount   = $owners.Count
+                            if ($ownersGroupCount -gt 0) {
+                                $ownersGroupMembers = ($owners | ForEach-Object { Get-DisplayName $_ } | Where-Object { $_ } | Sort-Object -Unique) -join "; "
+                            }
+                        }
+                    } catch { Write-ErrorLog -Message $_.Exception.Message -Location "Owners Group: $webUrl" }
+
+                    $orphanedUsersCount  = 0
+                    try {
+                        $orphanedUsersCount = ($web.SiteUsers | Where-Object { $_.IsSiteAdmin -eq $false -and $_.LoginName -like "*\*" -and $_.UserToken -eq $null }).Count
+                    } catch { Write-ErrorLog -Message $_.Exception.Message -Location "Orphaned Users: $webUrl" }
+
+                    $uniquePermObjects = 0
+                    try { if ($web.HasUniqueRoleAssignments) { $uniquePermObjects++ } } catch { }
+
+                    # Customizations
+                    $customMasterPage  = $false
+                    $alternateCss      = $false
+                    $publishingEnabled = $false
+
+                    try {
+                        $defaultMasters = @("/_catalogs/masterpage/seattle.master", "/_catalogs/masterpage/oslo.master")
+                        if ($web.CustomMasterUrl -and -not ($defaultMasters -contains $web.CustomMasterUrl)) { $customMasterPage = $true }
+                    } catch { }
+                    try { if ($web.AlternateCssUrl) { $alternateCss = $true } } catch { }
+                    try {
+                        $pubFeature = $web.Features | Where-Object { $_.DefinitionId -eq "94c94ca6-b32f-4da9-a9e3-1f3d343d7ecb" }
+                        if ($pubFeature) { $publishingEnabled = $true }
+                    } catch { }
+
+                    $customFeaturesWeb = @()
+                    try {
+                        $customFeaturesWeb = $web.Features | Where-Object { $_.Definition.Scope -eq "Web" -and -not ($_.DefinitionId -match '^00bfea71-') } | Select-Object -ExpandProperty DefinitionId -Unique
+                    } catch { }
+                    $customFeaturesWebStr = ($customFeaturesWeb | ForEach-Object { $_.ToString() }) -join "; "
+
+                    $unghostedPagesCount = 0
+                    try {
+                        $pageFiles = $web.Files | Select-Object -First $MaxUnghostedPagesToScan
+                        $unghostedPagesCount = ($pageFiles | Where-Object { $_.CustomizedPageStatus -eq [Microsoft.SharePoint.SPCustomizedPageStatus]::Customized }).Count
+                    } catch { }
+
+                    # Content volume
+                    $totalItemCount            = 0
+                    $listsOver5k               = 0
+                    $largestListItemCount      = 0
+                    $brokenInheritanceLists    = 0
+                    $infoPathLibrariesCount    = 0
+                    $bcsExternalListsCount     = 0
+                    $sp2010WorkflowsCount      = 0
+                    $sp2013WorkflowsCount      = 0
+                    $invalidFileNamesCount     = 0
+                    $illegalCharsCount         = 0
+                    $urlTooLongCount           = 0
+                    $checkedOutFilesCount      = 0
+                    $versioningInfo            = ""
+                    $versionCountTotal         = 0
+                    $topLargestFiles           = @()
+
+                    $libStatsForWeb      = @()
+                    $urlIssuesCountForWeb= 0
+
+                    try {
+                        $listIndex = 0; $totalLists = $web.Lists.Count
+
+                        foreach ($list in $web.Lists) {
+                            $listIndex++
+                            Write-Progress -Activity "Processing Lists" -Status "List $listIndex of $totalLists - $($list.Title)" -PercentComplete (($listIndex / $totalLists) * 100) -ParentId 1 -Id 2
+
+                            try {
+                                $itemCount = $list.ItemCount
+                                $totalItemCount += $itemCount
+
+                                if ($itemCount -gt $largestListItemCount) { $largestListItemCount = $itemCount }
+                                if ($itemCount -gt 5000) { $listsOver5k++ }
+                                if ($list.HasUniqueRoleAssignments) { $brokenInheritanceLists++; $uniquePermObjects++ }
+
+                                if ($list.BaseTemplate -eq [Microsoft.SharePoint.SPListTemplateType]::XMLForm)       { $infoPathLibrariesCount++ }
+                                if ($list.BaseTemplate -eq [Microsoft.SharePoint.SPListTemplateType]::ExternalList)   { $bcsExternalListsCount++ }
+
+                                try {
+                                    foreach ($wf in $list.WorkflowAssociations) {
+                                        if ($wf.IsDeclarative) { $sp2013WorkflowsCount++ } else { $sp2010WorkflowsCount++ }
+                                    }
+                                } catch { }
+
+                                if (-not $versioningInfo -and $list.EnableVersioning -and $list.BaseType -eq [Microsoft.SharePoint.SPBaseType]::DocumentLibrary) {
+                                    $versioningInfo = "Enabled; Major=$($list.MajorVersionLimit)"
+                                    if ($list.EnableMinorVersions) { $versioningInfo += "; Minor=$($list.MajorWithMinorVersionsLimit)" }
+                                }
+
+                                $libIsSystem = Test-IsSystemLibrary -List $list
+
+                                # USER LIBRARY STATS
+                                if (-not $libIsSystem) {
+                                    $libIsDoc        = $list.BaseType -eq [Microsoft.SharePoint.SPBaseType]::DocumentLibrary
+                                    $libServerRelUrl = $list.RootFolder.ServerRelativeUrl
+                                    $libItemCount    = $itemCount
+                                    $libFolderCount  = 0
+                                    try { $libFolderCount = $list.Folders.Count } catch { }
+                                    $libName         = $list.Title
+                                    $libIsLarge      = ($libItemCount -ge $LargeLibraryThreshold)
+                                    $libUrlLen       = $libServerRelUrl.Length
+                                    $libDepth        = Get-ServerRelativeDepth -ServerRelativeUrl $libServerRelUrl
+                                    $libDepthWarn    = ($libDepth -ge $DeepFolderDepthThreshold)
+
+                                    $libStat = [PSCustomObject]@{
+                                        SiteCollectionUrl          = $scUrl
+                                        WebUrl                     = $webUrl
+                                        ListTitle                  = $libName
+                                        ListUrl                    = $libServerRelUrl
+                                        BaseType                   = $list.BaseType.ToString()
+                                        ItemCount                  = $libItemCount
+                                        FolderCount                = $libFolderCount
+                                        LargeLibrary               = $libIsLarge
+                                        UrlLength                  = $libUrlLen
+                                        UrlLenWarn260              = ($libUrlLen -ge $UrlWarnLength1)
+                                        UrlLenWarn400              = ($libUrlLen -ge $UrlWarnLength2)
+                                        PathDepth                  = $libDepth
+                                        DepthWarn                  = $libDepthWarn
+                                        LargestFolderName          = ""
+                                        LargestFolderItemCount     = 0
+                                        FoldersOverViewThreshold   = 0
+                                    }
+                                    $libStatsForWeb += $libStat
+
+                                    # Folders
+                                    try {
+                                        $foldersToCheck = $list.Folders
+                                        if ($foldersToCheck -and $foldersToCheck.Count -gt 0) {
+                                            $largestFolderName   = ""
+                                            $largestFolderItems  = 0
+                                            $foldersOverThreshold= 0
+
+                                            foreach ($folder in $foldersToCheck) {
+                                                try {
+                                                    $folderUrl       = $folder.ServerRelativeUrl
+                                                    $folderItemCount = $folder.ItemCount
+                                                    if ($folderItemCount -gt $largestFolderItems) { $largestFolderItems = $folderItemCount; $largestFolderName = $folder.Name }
+                                                    if ($folderItemCount -ge $LargeViewFolderThreshold) { $foldersOverThreshold++ }
+
+                                                    $fUrlLen = $folderUrl.Length
+                                                    $fDepth  = Get-ServerRelativeDepth -ServerRelativeUrl $folderUrl
+                                                    if (($fUrlLen -ge $UrlWarnLength1) -or ($fUrlLen -ge $UrlWarnLength2) -or ($fDepth -ge $DeepFolderDepthThreshold)) {
+                                                        $urlDepthIssues.Add([PSCustomObject]@{
+                                                            SiteCollectionUrl = $scUrl
+                                                            WebUrl            = $webUrl
+                                                            ListTitle         = $libName
+                                                            ObjectType        = "Folder"
+                                                            Name              = $folder.Name
+                                                            ServerRelativeUrl = $folderUrl
+                                                            UrlLength         = $fUrlLen
+                                                            UrlLenWarn260     = ($fUrlLen -ge $UrlWarnLength1)
+                                                            UrlLenWarn400     = ($fUrlLen -ge $UrlWarnLength2)
+                                                            PathDepth         = $fDepth
+                                                            DepthWarn         = ($fDepth -ge $DeepFolderDepthThreshold)
+                                                        }) | Out-Null
+                                                        $urlIssuesCountForWeb++
+                                                    }
+                                                } catch { }
+                                            }
+                                            $libStat.LargestFolderName        = $largestFolderName
+                                            $libStat.LargestFolderItemCount   = $largestFolderItems
+                                            $libStat.FoldersOverViewThreshold = $foldersOverThreshold
+                                        }
+                                    } catch { }
+                                }
+
+                                # DOC LIB CHECKS (USER LIBRARIES ONLY)
+                                if ($list.BaseType -eq [Microsoft.SharePoint.SPBaseType]::DocumentLibrary -and (-not $libIsSystem)) {
+                                    $checkedOutFilesCount += $list.CheckedOutFiles.Count
+
+                                    $filesToScan = $null
+                                    if ($itemCount -le $MaxFilesToScanPerList) {
+                                        $filesToScan = $list.Items
+                                    } else {
+                                        try {
+                                            $query = New-Object Microsoft.SharePoint.SPQuery
+                                            $query.RowLimit = $MaxFilesToScanPerList
+                                            $query.ViewAttributes = "Scope='RecursiveAll'"
+                                            $filesToScan = $list.GetItems($query)
+                                        } catch {
+                                            $filesToScan = $list.Items | Select-Object -First $MaxFilesToScanPerList
+                                        }
+                                    }
+
+                                    foreach ($item in $filesToScan) {
+                                        try {
+                                            if ($item.File -and $item.File.Exists) {
+                                                $fileName  = $item.File.Name
+                                                $fileUrl   = $item.File.ServerRelativeUrl
+                                                $fileSize  = $item.File.Length
+                                                $fileSizeMB= [Math]::Round(($fileSize / 1MB), 2)
+
+                                                if ($fileName -like "*.master" -or $fileName -like "*.webpart" -or $fileName -like "*.dwp" -or ($fileName -like "*.aspx" -and $fileUrl -like "*/_catalogs/*")) { continue }
+
+                                                if (Test-InvalidFileName -Name $fileName) { $invalidFileNamesCount++ }
+                                                $illegalCharsCount += Get-IllegalCharCount -Name $fileName
+
+                                                if ($fileUrl.Length -gt 400) { $urlTooLongCount++ }
+
+                                                $fUrlLen = $fileUrl.Length
+                                                $fDepth  = Get-ServerRelativeDepth -ServerRelativeUrl $fileUrl
+                                                if (($fUrlLen -ge $UrlWarnLength1) -or ($fUrlLen -ge $UrlWarnLength2) -or ($fDepth -ge $DeepFolderDepthThreshold)) {
+                                                    $urlDepthIssues.Add([PSCustomObject]@{
+                                                        SiteCollectionUrl = $scUrl
+                                                        WebUrl            = $webUrl
+                                                        ListTitle         = $list.Title
+                                                        ObjectType        = "File"
+                                                        Name              = $fileName
+                                                        ServerRelativeUrl = $fileUrl
+                                                        UrlLength         = $fUrlLen
+                                                        UrlLenWarn260     = ($fUrlLen -ge $UrlWarnLength1)
+                                                        UrlLenWarn400     = ($fUrlLen -ge $UrlWarnLength2)
+                                                        PathDepth         = $fDepth
+                                                        DepthWarn         = ($fDepth -ge $DeepFolderDepthThreshold)
+                                                    }) | Out-Null
+                                                    $urlIssuesCountForWeb++
+                                                }
+
+                                                if ($fileSizeMB -ge $MinFileSizeMB) {
+                                                    if ($topLargestFiles.Count -lt 10) {
+                                                        $topLargestFiles += [PSCustomObject]@{ Name = $fileName; SizeMB = $fileSizeMB }
+                                                    } else {
+                                                        $smallest = ($topLargestFiles | Sort-Object SizeMB | Select-Object -First 1)
+                                                        if ($fileSizeMB -gt $smallest.SizeMB) {
+                                                            $topLargestFiles = @($topLargestFiles | Where-Object { $_.Name -ne $smallest.Name })
+                                                            $topLargestFiles += [PSCustomObject]@{ Name = $fileName; SizeMB = $fileSizeMB }
+                                                        }
+                                                    }
+                                                }
+
+                                                if ($item.File.Versions -and $item.File.Versions.Count -gt 0) {
+                                                    $versionCountTotal += $item.File.Versions.Count
+                                                }
+                                            }
+                                        } catch { }
+                                    }
+                                }
+                            } catch {
+                                Write-ErrorLog -Message $_.Exception.Message -Location "List Processing: $webUrl - $($list.Title)"
+                            }
+                        }
+                        Write-Progress -Activity "Processing Lists" -Id 2 -Completed
+                    } catch {
+                        Write-ErrorLog -Message $_.Exception.Message -Location "Lists Enumeration: $webUrl"
+                    }
+
+                    try {
+                        foreach ($wf in $web.WorkflowAssociations) { if ($wf.IsDeclarative) { $sp2013WorkflowsCount++ } else { $sp2010WorkflowsCount++ } }
+                    } catch { }
+
+                    $topLargestFilesStr = ""
+                    if ($topLargestFiles.Count -gt 0) {
+                        $topLargestFilesStr = ($topLargestFiles | Sort-Object SizeMB -Descending | ForEach-Object { "$($_.Name) ($($_.SizeMB)MB)" }) -join "; "
+                    }
+
+                    # Nintex detection (kept as in prior script)
+                    $nintexFeaturesWeb   = @(); $HasNintexFeatureWeb = $false
+                    try { $nintexFeaturesWeb = $web.Features | Where-Object { $_.Definition.DisplayName -like "*Nintex*" }; $HasNintexFeatureWeb = [bool]$nintexFeaturesWeb } catch { }
+
+                    $nintexFormsList = $null; $HasNintexForms  = $false
+                    try {
+                        $nintexFormsList = $web.Lists.TryGetList("NintexForms")
+                        $HasNintexForms  = ($nintexFormsList -ne $null) -or ( ($nintexFeaturesSC + $nintexFeaturesWeb | Where-Object { $_.Definition.DisplayName -like "*Nintex*Form*" }).Count -gt 0 )
+                    } catch { }
+
+                    $HasNintexWorkflow = $false
+                    try {
+                        $wfFeatureHit = ($nintexFeaturesSC + $nintexFeaturesWeb | Where-Object { $_.Definition.DisplayName -like "*Nintex*Workflow*" })
+                        if ($wfFeatureHit -and $wfFeatureHit.Count -gt 0) {
+                            $HasNintexWorkflow = $true
+                        } else {
+                            $wfGallery = $web.Lists | Where-Object { $_.BaseTemplate -eq [Microsoft.SharePoint.SPListTemplateType]::WorkflowCatalog }
+                            if ($wfGallery) {
+                                $nintexInWfItems = $wfGallery.Items | Where-Object { ($_.File -and $_.File.Name -like "*Nintex*") -or ($_.Title -like "*Nintex*") }
+                                if ($nintexInWfItems -and $nintexInWfItems.Count -gt 0) { $HasNintexWorkflow = $true }
+                            }
+                        }
+                    } catch { }
+
+                    $last90DayActivity = $false
+                    try { $cutoffDate = (Get-Date).AddDays(-90); if ($webLastMod -gt $cutoffDate) { $last90DayActivity = $true } } catch { }
+
+                    foreach ($s in $libStatsForWeb) { $libraryStats.Add($s) | Out-Null }
+
+                    $libSummary = ""
+                    try {
+                        $largeLibs   = ($libStatsForWeb | Where-Object { $_.LargeLibrary }).Count
+                        $foldersOver = ($libStatsForWeb | Measure-Object -Property FoldersOverViewThreshold -Sum).Sum
+                        $libSummary  = "Libraries: $($libStatsForWeb.Count); LargeLibs(>$LargeLibraryThreshold): $largeLibs; FoldersOverView(>$LargeViewFolderThreshold): $foldersOver"
+                    } catch { $libSummary = "" }
+
+                    # ========== BUILD RECORD (Pretty) ==========
+                    $record = [PSCustomObject]@{
+                        "Row Type"                         = if ($isRootWeb) { "Site Collection" } else { "Subsite" }
+                        "Site Name"                        = $webTitle
+                        "Site URL"                         = $webUrl
+                        "Site Collection URL"              = $scUrl
+                        "Subsite Count (SC only)"          = if ($isRootWeb) { Format-Int $subsiteCount } else { "" }
+                        "Site Collection Size (GB)"        = if ($isRootWeb) { Format-Decimal $scSizeGB 2 } else { "" }
+                        "Site Collection Size (MB)"        = if ($isRootWeb) { Format-Decimal $scSizeMB 2 } else { "" }
+                        "Site Owners (Display Names)"      = if ($isRootWeb) { $scOwnersStr } else { "" }
+                        "Site Collection Admins (Display)" = if ($isRootWeb) { $scAdminsStr } else { "" }
+                        "Owners Group Count"               = Format-Int $ownersGroupCount
+                        "Owners Group Members (Display)"   = $ownersGroupMembers
+                        "Orphaned Users Count"             = Format-Int $orphanedUsersCount
+                        "Unique Permission Objects"        = Format-Int $uniquePermObjects
+                        "Lists with Broken Inheritance"    = Format-Int $brokenInheritanceLists
+                        "Last Modified"                    = Format-Date $webLastMod
+                        "Active in Last 90 Days"           = Format-Bool $last90DayActivity
+                        "Total Item Count"                 = Format-Int $totalItemCount
+                        "Lists Over 5k"                    = Format-Int $listsOver5k
+                        "Largest List Item Count"          = Format-Int $largestListItemCount
+                        "Library Stats Summary"            = $libSummary
+                        "URL/Depth Issues (Count)"         = Format-Int $urlIssuesCountForWeb
+                        "Top 10 Largest Files (>=5MB)"     = $topLargestFilesStr
+                        "Invalid File Names (Count)"       = Format-Int $invalidFileNamesCount
+                        "Illegal Characters (Total)"       = Format-Int $illegalCharsCount
+                        "File URLs >400 chars (Count)"     = Format-Int $urlTooLongCount
+                        "Checked Out Files (Count)"        = Format-Int $checkedOutFilesCount
+                        "Customized (Unghosted) Pages"     = Format-Int $unghostedPagesCount
+                        "Versioning Info (sample)"         = $versioningInfo
+                        "Total Versions (sample)"          = Format-Int $versionCountTotal
+                        "Custom Master Page"               = Format-Bool $customMasterPage
+                        "Alternate CSS"                    = Format-Bool $alternateCss
+                        "Publishing Enabled"               = Format-Bool $publishingEnabled
+                        "Sandbox Solutions (SC only)"      = if ($isRootWeb) { $sandboxSolutionsStr } else { "" }
+                        "Custom Features (SC) IDs"         = if ($isRootWeb) { $customFeaturesSCStr } else { "" }
+                        "Custom Features (Web) IDs"        = $customFeaturesWebStr
+                        "InfoPath Libraries"               = Format-Int $infoPathLibrariesCount
+                        "SP 2010 Workflows"                = Format-Int $sp2010WorkflowsCount
+                        "SP 2013 Workflows"                = Format-Int $sp2013WorkflowsCount
+                        "BCS External Lists"               = Format-Int $bcsExternalListsCount
+                        "Nintex Forms Detected"            = Format-Bool $HasNintexForms
+                        "Nintex Workflow Detected"         = Format-Bool $HasNintexWorkflow
+                        "Audit Enabled (SC only)"          = if ($isRootWeb) { Format-Bool $auditEnabled } else { "" }
+                        "Quota Template (SC only)"         = if ($isRootWeb) { $quotaTemplate } else { "" }
+                        "Storage Warning (MB) (SC only)"   = if ($isRootWeb) { Format-Decimal $storageWarningMB 0 } else { "" }
+                        "Recycle Bin Size (MB) (SC only)"  = if ($isRootWeb) { Format-Decimal $recycleBinSizeMB 0 } else { "" }
+                    }
+                    $results.Add($record) | Out-Null
+
+                } catch {
+                    Write-Warning "Error processing web $($web.Url): $($_.Exception.Message)"
+                    Write-ErrorLog -Message $_.Exception.Message -Location "Web Processing: $($web.Url)"
+                }
+            }
+
+            Write-Progress -Activity "Processing Webs in Site Collection" -Id 1 -Completed
+
+        } catch {
+            Write-Warning "Error processing site collection $($site.Url): $($_.Exception.Message)"
+            Write-ErrorLog -Message $_.Exception.Message -Location "Site Collection Processing: $($site.Url)"
+        }
+    }
+
+} catch {
+    Write-Error "Fatal error during script execution: $($_.Exception.Message)"
+    Write-ErrorLog -Message $_.Exception.Message -Location "Main Script Execution"
+} finally {
+    Stop-SPAssignment $assignment
+    Write-Progress -Activity "Processing Site Collections" -Id 0 -Completed
+}
+
+# ============================================================================
+# EXPORT RESULTS (Pretty formatting for LibraryStats too)
+# ============================================================================
+
+if ($results.Count -gt 0) {
+
+    # Sort nicely: by Site Collection, then Site/URL, with SC row first
+    $sortedMain = $results |
+        Sort-Object "Site Collection URL", @{ Expression = { if ($_."Row Type" -eq "Site Collection") { 0 } else { 1 } } }, "Site URL"
+
+    $sortedMain | Export-Csv -NoTypeInformation -Encoding UTF8 -Path $CsvPath
+
+    # Make library stats human-friendly
+    $libPretty = $libraryStats | ForEach-Object {
+        [PSCustomObject]@{
+            "Site Collection URL"     = $_.SiteCollectionUrl
+            "Site URL"                = $_.WebUrl
+            "Library/List Title"      = $_.ListTitle
+            "Library Root URL"        = $_.ListUrl
+            "Type"                    = if ($_.BaseType -eq "DocumentLibrary") { "Document Library" } else { "List" }
+            "Item Count"              = if ($PrettyOutput) { "{0:N0}" -f $_.ItemCount } else { $_.ItemCount }
+            "Folder Count"            = if ($PrettyOutput) { "{0:N0}" -f $_.FolderCount } else { $_.FolderCount }
+            "Large Library (≥10,000)" = if ($PrettyOutput) { if ($_.LargeLibrary) { "Yes" } else { "No" } } else { $_.LargeLibrary }
+            "Library URL Length"      = $_.UrlLength
+            "URL ≥260"                = if ($PrettyOutput) { if ($_.UrlLenWarn260) { "Yes" } else { "No" } } else { $_.UrlLenWarn260 }
+            "URL ≥400"                = if ($PrettyOutput) { if ($_.UrlLenWarn400) { "Yes" } else { "No" } } else { $_.UrlLenWarn400 }
+            "Path Depth"              = $_.PathDepth
+            "Depth ≥10"               = if ($PrettyOutput) { if ($_.DepthWarn) { "Yes" } else { "No" } } else { $_.DepthWarn }
+            "Largest Folder Name"     = $_.LargestFolderName
+            "Largest Folder Items"    = if ($PrettyOutput) { "{0:N0}" -f $_.LargestFolderItemCount } else { $_.LargestFolderItemCount }
+            "Folders ≥5,000 Items"    = if ($PrettyOutput) { "{0:N0}" -f $_.FoldersOverViewThreshold } else { $_.FoldersOverViewThreshold }
+        }
+    }
+
+    if ($libPretty.Count -gt 0) {
+        $libPretty | Sort-Object "Site Collection URL","Site URL","Library/List Title" |
+            Export-Csv -NoTypeInformation -Encoding UTF8 -Path $LibStatsCsv
+    }
+
+    if ($urlDepthIssues.Count -gt 0) {
+        # Keep url issues as-is (technical), but sort and label
+        $urlDepthIssues |
+            Sort-Object SiteCollectionUrl, WebUrl, ListTitle, ObjectType, Name |
+            Export-Csv -NoTypeInformation -Encoding UTF8 -Path $UrlIssuesCsv
+    }
+
+    # Readme with column descriptions (optional)
+    if ($WriteReadme) {
+        @"
+SP2019_MigrationInventory.csv - Column Definitions
+--------------------------------------------------
+Row Type: Whether the row represents the root “Site Collection” or a “Subsite”.
+Site Name: Display title of the site/web.
+Site URL: Full URL of the site/web.
+Site Collection URL: URL of the site collection that this site/web belongs to.
+Subsite Count (SC only): Number of subsites under the site collection root. Shown only on the Site Collection row.
+Site Collection Size (GB/MB): Total storage used by the entire site collection.
+Site Owners (Display Names): Display names of the primary and secondary site collection owners.
+Site Collection Admins (Display): Display names of all site collection administrators.
+Owners Group Count: Number of users in the site’s associated Owners group.
+Owners Group Members (Display): Display names of members of the site’s Owners group.
+Orphaned Users Count: Users present in the site but not resolvable (e.g., disabled/deleted).
+Unique Permission Objects: Security scopes with unique permissions at this site (includes lists with broken inheritance).
+Lists with Broken Inheritance: Count of lists/libraries that do not inherit permissions from the site.
+Last Modified: Last item modified timestamp for the site.
+Active in Last 90 Days: Whether any modification occurred within the last 90 days.
+Total Item Count: Total items across all lists/libraries in this site.
+Lists Over 5k: Number of lists/libraries exceeding 5,000 items.
+Largest List Item Count: The largest item count among lists/libraries in this site.
+Library Stats Summary: Summary of user-created libraries: total libraries; how many exceed 10,000 items; how many folders exceed 5,000 items.
+URL/Depth Issues (Count): Number of folder/file paths in user libraries that exceed URL length (≥260 or ≥400) or path depth (≥10).
+Top 10 Largest Files (≥5MB): Largest files found (≥5MB), formatted “FileName (SizeMBMB)”.
+Invalid File Names (Count): Files with invalid names for SPO/Windows.
+Illegal Characters (Total): Total occurrences of illegal characters in file names.
+File URLs >400 chars (Count): Files whose URL length is greater than 400 characters.
+Checked Out Files (Count): Documents currently checked out.
+Customized (Unghosted) Pages: Customized pages in the site (sampled).
+Versioning Info (sample): Versioning setting from the first relevant library encountered.
+Total Versions (sample): Sum of version counts from sampled documents.
+Custom Master Page / Alternate CSS / Publishing Enabled: Look-and-feel and publishing indicators.
+Sandbox Solutions (SC only): Sandboxed solutions deployed to the site collection.
+Custom Features (SC) IDs / Custom Features (Web) IDs: Non-OOTB feature IDs found at those scopes.
+InfoPath Libraries / SP 2010 Workflows / SP 2013 Workflows / BCS External Lists: Counts of these artifacts.
+Nintex Forms Detected / Nintex Workflow Detected: Presence of Nintex features/artifacts.
+Audit Enabled (SC only): Whether auditing is enabled at site collection level.
+Quota Template (SC only): Identifier of the quota template applied.
+Storage Warning (MB) (SC only): Storage warning threshold in MB.
+Recycle Bin Size (MB) (SC only): Size of recycle bin in MB.
+
+SP2019_LibraryStats.csv - Column Definitions (user-created libraries only)
+-------------------------------------------------------------------------
+Site Collection URL, Site URL: Location of the library.
+Library/List Title: Display name of the library or list.
+Library Root URL: Server-relative URL of the library root folder.
+Type: Document Library or List.
+Item Count / Folder Count: Volumes in the library.
+Large Library (≥10,000): Whether the library exceeds 10,000 items.
+Library URL Length / URL ≥260 / URL ≥400: URL length and warnings for the library root.
+Path Depth / Depth ≥10: Number of path segments and deep-path warning.
+Largest Folder Name / Largest Folder Items: Largest folder and its item count.
+Folders ≥5,000 Items: Count of folders exceeding 5,000 items.
+
+SP2019_UrlDepthIssues.csv - Column Definitions (user-created libraries only)
+----------------------------------------------------------------------------
+ObjectType: Folder or File.
+Name / ServerRelativeUrl: The item and its path.
+UrlLength / UrlLenWarn260 / UrlLenWarn400: URL length and warnings.
+PathDepth / DepthWarn: Path depth and deep-path warning.
+"@ | Out-File -FilePath $ReadmePath -Encoding UTF8
+    }
+
+    Write-Host "`n========================================" -ForegroundColor Green
+    Write-Host "INVENTORY COMPLETE" -ForegroundColor Green
+    Write-Host "========================================" -ForegroundColor Green
+    Write-Host "CSV written: $CsvPath" -ForegroundColor Cyan
+    if ($libraryStats.Count -gt 0) { Write-Host "Library stats CSV: $LibStatsCsv" -ForegroundColor Cyan }
+    if ($urlDepthIssues.Count -gt 0) { Write-Host "URL/Depth issues CSV: $UrlIssuesCsv" -ForegroundColor Cyan }
+    if ($WriteReadme) { Write-Host "README written: $ReadmePath" -ForegroundColor Cyan }
+    Write-Host "Error log:   $ErrorLog" -ForegroundColor Cyan
+
+} else {
+    Write-Warning "No results to export. Check error log: $ErrorLog"
+}
+
+# ============================================================================
+# END OF SCRIPT
+# ============================================================================
