@@ -35,6 +35,9 @@ $DeepFolderDepthThreshold  = 10
 $UrlWarnLength1            = 260
 $UrlWarnLength2            = 400
 
+# Issue detection thresholds
+$ManyCheckedOutThreshold   = 50
+
 # Optional scope narrowing (set to non-empty arrays to limit workload)
 $IncludeWebApps = @()   # e.g. @("http://intranet.contoso.com")
 $ExcludeWebApps = @()
@@ -630,6 +633,36 @@ try {
                         $libSummary  = "Libraries: $($libStatsForWeb.Count); LargeLibs(>$LargeLibraryThreshold): $largeLibs; FoldersOverView(>$LargeViewFolderThreshold): $foldersOver"
                     } catch { $libSummary = "" }
 
+                    # ========== ISSUE FLAGS AND SEVERITY (OPTION A) ==========
+                    $flagUrlDepthIssues      = ($urlIssuesCountForWeb -gt 0)
+                    $flagLargeLibraries      = (($libStatsForWeb | Where-Object { $_.LargeLibrary }).Count -gt 0)
+                    $flagListsOver5k         = ($listsOver5k -gt 0)
+                    $flagInvalidNames        = ($invalidFileNamesCount -gt 0)
+                    $flagUrlOver400          = ($urlTooLongCount -gt 0)
+                    $flagManyCheckedOut      = ($checkedOutFilesCount -ge $ManyCheckedOutThreshold)
+                    $flagUnghostedPages      = ($unghostedPagesCount -gt 0)
+                    $flagLegacyWf2010        = ($sp2010WorkflowsCount -gt 0)
+                    $flagInfoPath            = ($infoPathLibrariesCount -gt 0)
+                    $flagBcs                 = ($bcsExternalListsCount -gt 0)
+                    $flagBrandingChanges     = ($customMasterPage -or $alternateCss)
+                    $flagInactiveOver90      = (-not $last90DayActivity)
+
+                    # Weighted severity score (0-100)
+                    $severity = 0
+                    if ($flagUrlDepthIssues)  { $severity += 20 }
+                    if ($flagLargeLibraries)  { $severity += 15 }
+                    if ($flagListsOver5k)     { $severity += 15 }
+                    if ($flagInvalidNames)    { $severity += 10 }
+                    if ($flagUrlOver400)      { $severity += 10 }
+                    if ($flagManyCheckedOut)  { $severity += 10 }
+                    if ($flagUnghostedPages)  { $severity += 5  }
+                    if ($flagLegacyWf2010)    { $severity += 5  }
+                    if ($flagInfoPath)        { $severity += 5  }
+                    if ($flagBcs)             { $severity += 5  }
+                    if ($flagBrandingChanges) { $severity += 5  }
+                    if ($flagInactiveOver90)  { $severity += 5  }
+                    if ($severity -gt 100)    { $severity = 100 }
+
                     # ========== BUILD RECORD ==========
                     $record = [PSCustomObject]@{
                         "Row Type"                         = if ($isRootWeb) { "Site Collection" } else { "Subsite" }
@@ -677,6 +710,19 @@ try {
                         "Quota Template (SC only)"         = if ($isRootWeb) { $quotaTemplate } else { "" }
                         "Storage Warning (MB) (SC only)"   = if ($isRootWeb) { Format-Decimal $storageWarningMB 0 } else { "" }
                         "Recycle Bin Size (MB) (SC only)"  = if ($isRootWeb) { Format-Decimal $recycleBinSizeMB 0 } else { "" }
+                        "Issue: Has URL/Depth Issues"      = Format-Bool $flagUrlDepthIssues
+                        "Issue: Has Large Libraries"       = Format-Bool $flagLargeLibraries
+                        "Issue: Lists Over 5k"             = Format-Bool $flagListsOver5k
+                        "Issue: Invalid File Names"        = Format-Bool $flagInvalidNames
+                        "Issue: File URLs >400"            = Format-Bool $flagUrlOver400
+                        "Issue: Many Checked-out Files"    = Format-Bool $flagManyCheckedOut
+                        "Issue: Unghosted Pages"           = Format-Bool $flagUnghostedPages
+                        "Issue: Legacy Workflows (2010)"   = Format-Bool $flagLegacyWf2010
+                        "Issue: InfoPath Present"          = Format-Bool $flagInfoPath
+                        "Issue: BCS External Lists"        = Format-Bool $flagBcs
+                        "Issue: Branding Changes"          = Format-Bool $flagBrandingChanges
+                        "Issue: Inactive Over 90 Days"     = Format-Bool $flagInactiveOver90
+                        "Issue: Severity (0-100)"          = $severity
                     }
                     $results.Add($record) | Out-Null
 
