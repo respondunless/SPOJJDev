@@ -1,0 +1,76 @@
+Column descriptions for SP2019_MigrationInventory.csv
+Type: Whether the row represents the root “Site Collection” or a “Subsite”.
+SiteName: The display title of the site/web.
+SiteUrl: The full URL of the site/web.
+SiteCollectionUrl: The URL of the site collection that this site/web belongs to.
+SubsiteCount: Number of subsites directly and indirectly under the site collection root (populated only on the Site Collection row).
+SiteCollectionSizeGB: Total storage used by the entire site collection in gigabytes (GB) (reported on the Site Collection row).
+SiteCollectionSizeMB: Total storage used by the entire site collection in megabytes (MB) (reported on the Site Collection row).
+SiteOwners: Cleaned usernames of the primary and secondary site collection owners (domain/claims prefixes removed). Only on the Site Collection row.
+SiteCollectionAdmins: Cleaned usernames for all Site Collection Administrators. Only on the Site Collection row.
+OwnersGroupCount: Number of users in the site’s associated Owners group (if one exists).
+OrphanedUsersCount: Count of users present in the site but no longer resolvable (e.g., disabled/deleted accounts).
+UniquePermissionObjects: Count of security scopes with unique permissions at this site (includes the web itself and lists with broken inheritance).
+ListsWithBrokenInheritance: Number of lists/libraries in this site that have unique permissions (inheritance broken).
+LastModified: The date and time when any content in this site was last modified.
+Last90DayActivity: True if there was any modification in this site within the last 90 days; otherwise False.
+TotalItemCount: Total number of items across all lists and libraries in this site.
+ListsOver5kCount: Number of lists/libraries in this site that exceed 5,000 items (classic list view threshold indicator).
+LargestListItemCount: The item count of the largest list/library in this site.
+LibraryStatsSummary: A quick summary of user-created libraries in this site: total libraries, how many exceed the large-library threshold (10,000 items), and how many folders exceed the “large view” threshold (5,000 items).
+UrlDepthIssuesCount: Number of folder/file paths in user-created libraries that breach URL length (≥260 or ≥400 chars) or path depth (≥10 segments) thresholds.
+Top10LargestFiles: A semicolon-separated list of the 10 largest files found in user libraries in this site (only files ≥5 MB), formatted as “FileName (SizeMBMB)”, sorted largest-first.
+InvalidFileNamesCount: Count of files with invalid names for SharePoint Online/Windows (reserved names like CON/PRN, invalid characters like * : < > ? " |, trailing dots/spaces).
+IllegalCharsCount: Total number of illegal characters detected across file names in this site (sum of occurrences of characters like * : < > ? " |).
+UrlTooLongCount: Count of files with URL length greater than 400 characters (potential migration blocker for SPO).
+CheckedOutFilesCount: Number of documents currently checked out (not yet checked in) in this site’s user libraries.
+UnghostedPagesCount: Count of customized (unghosted) pages detected in this site (sampled, capped by script to avoid long runs).
+VersioningInfo: Indicates whether versioning is enabled on the first document library where it’s detected and shows configured limits, e.g., “Enabled; Major=500; Minor=50”.
+VersionCountTotal: Aggregate number of file versions counted across sampled documents in this site.
+CustomizedMasterPage: True if the web is configured to use a custom master page (not seattle.master/oslo.master).
+AlternateCss: True if an Alternate CSS file is configured for this site.
+PublishingEnabled: True if the SharePoint Publishing feature is enabled on this site.
+SandboxSolutions: A semicolon-separated list of sandboxed solutions (.wsp) deployed at the site collection level (shown on the Site Collection row).
+CustomFeaturesSC: A semicolon-separated list of custom (non-OOTB) Feature IDs activated at the site collection scope (shown on the Site Collection row).
+CustomFeaturesWeb: A semicolon-separated list of custom (non-OOTB) Feature IDs activated at the web scope.
+InfoPathLibrariesCount: Number of XML Form libraries (InfoPath) in this site.
+SP2010WorkflowsCount: Count of classic SharePoint 2010-style workflows detected in this site and its lists.
+SP2013WorkflowsCount: Count of declarative SharePoint 2013-style workflows detected in this site and its lists.
+BcsExternalListsCount: Number of Business Connectivity Services (BCS) External Lists in this site.
+NintexFormsDetected: True if Nintex Forms features/list(s) are detected at site or web scope.
+NintexWorkflowDetected: True if Nintex Workflow features or artifacts are detected at site or web scope.
+AuditEnabled: True if auditing is configured at the site collection level (shown on the Site Collection row).
+QuotaTemplate: Identifier for the quota template applied to the site collection (shown on the Site Collection row).
+StorageWarningLevelMB: The storage warning threshold for the site collection in MB (shown on the Site Collection row).
+RecycleBinSizeMB: Size of the site collection recycle bin in MB (shown on the Site Collection row).
+Column descriptions for SP2019_LibraryStats.csv (user-created libraries only)
+SiteCollectionUrl: The URL of the site collection that the library belongs to.
+WebUrl: The URL of the site/web hosting the library.
+ListTitle: The display name of the library or list.
+ListUrl: The server-relative URL of the library root folder.
+BaseType: Whether it’s a DocumentLibrary or a generic List.
+ItemCount: Total number of items in the library.
+FolderCount: Total number of folders in the library.
+LargeLibrary: True if ItemCount ≥ 10,000 (potential SPO view performance issues).
+UrlLength: Length (in characters) of the library’s root server-relative URL.
+UrlLenWarn260: True if the library root URL length is ≥ 260 characters.
+UrlLenWarn400: True if the library root URL length is ≥ 400 characters.
+PathDepth: Number of path segments in the library’s root server-relative URL.
+DepthWarn: True if PathDepth ≥ 10 (deeply nested path).
+LargestFolderName: Name of the folder with the highest item count within the library.
+LargestFolderItemCount: Item count of the largest folder.
+FoldersOverViewThreshold: Number of folders that have ≥ 5,000 items (likely to break classic views and cause throttling in SPO).
+Column descriptions for SP2019_UrlDepthIssues.csv (user-created libraries only)
+SiteCollectionUrl: The URL of the site collection that the item belongs to.
+WebUrl: The URL of the site/web hosting the item.
+ListTitle: The name of the library containing the item.
+ObjectType: Whether the row represents a Folder or a File.
+Name: The folder or file name.
+ServerRelativeUrl: The server-relative path to the folder or file.
+UrlLength: The length of the ServerRelativeUrl in characters.
+UrlLenWarn260: True if the URL length is ≥ 260 characters.
+UrlLenWarn400: True if the URL length is ≥ 400 characters.
+PathDepth: Number of path segments in the ServerRelativeUrl.
+DepthWarn: True if PathDepth ≥ 10 (deep nesting likely to cause issues in SPO).
+
+If you want, I can append these as a README section to the output folder or generate a small CSV/Docx with these definitions.
