@@ -94,12 +94,12 @@ try {
 
     Write-Host "Enumerating site collections..." -ForegroundColor Cyan
     $allSitesRaw = Get-SPSite -Limit All -ErrorAction Stop
-    
+
     # FILTER: Exclude MySite Host site collections
-    $allSites = $allSitesRaw | Where-Object { 
-        $_.RootWeb.WebTemplate -ne "SPSMSITEHOST" 
+    $allSites = $allSitesRaw | Where-Object {
+        $_.RootWeb.WebTemplate -ne "SPSMSITEHOST"
     }
-    
+
     $excludedCount = $allSitesRaw.Count - $allSites.Count
     $siteCount = $allSites.Count
     $current = 0
@@ -382,11 +382,11 @@ try {
 
                                 # Document library specific checks (FIXED: use enum and SPQuery)
                                 # FILTER: Skip Master Page Gallery and other system libraries
-                                if ($list.BaseType -eq [Microsoft.SharePoint.SPBaseType]::DocumentLibrary -and 
+                                if ($list.BaseType -eq [Microsoft.SharePoint.SPBaseType]::DocumentLibrary -and
                                     $list.RootFolder.ServerRelativeUrl -notlike "*/_catalogs/masterpage*" -and
                                     $list.RootFolder.ServerRelativeUrl -notlike "*/_catalogs/theme*" -and
                                     $list.RootFolder.ServerRelativeUrl -notlike "*/Style Library*") {
-                                    
+
                                     $checkedOutFilesCount += $list.CheckedOutFiles.Count
 
                                     # FIXED: Use SPQuery for large lists to avoid timeout
@@ -412,10 +412,12 @@ try {
                                                 $fileName = $item.File.Name
                                                 $fileUrl = $item.File.ServerRelativeUrl
                                                 $fileSize = $item.File.Length
-                                                
-                                                # FILTER: Skip master pages and system files
-                                                if ($fileName -like "*.master" -or 
-                                                    $fileName -like "*.aspx" -and $fileUrl -like "*/_catalogs/*") {
+
+                                                # FILTER: Skip master pages, webparts, and system files
+                                                if ($fileName -like "*.master" -or
+                                                    $fileName -like "*.webpart" -or
+                                                    $fileName -like "*.dwp" -or
+                                                    ($fileName -like "*.aspx" -and $fileUrl -like "*/_catalogs/*")) {
                                                     continue
                                                 }
 
