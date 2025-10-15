@@ -1,5 +1,5 @@
 # ============================================================================
-# SharePoint 2019 Migration Inventory Script - FIXED & HARDENED
+# SharePoint 2019 Migration Inventory Script - REFINED
 # ============================================================================
 # Purpose: Comprehensive site collection and web inventory for migration planning
 # Requires: SharePoint 2019 Management Shell (Run as Farm Admin on App server)
@@ -7,6 +7,7 @@
 # - SP2019_MigrationInventory.csv
 # - SP2019_LibraryStats.csv
 # - SP2019_UrlDepthIssues.csv
+# - SP2019_IssuesOnly.csv
 # ============================================================================
 
 # Load snapin if needed
@@ -18,6 +19,7 @@ $CsvPath      = Join-Path $OutputFolder "SP2019_MigrationInventory.csv"
 $ErrorLog     = Join-Path $OutputFolder "SP2019_MigrationInventory_Errors.log"
 $LibStatsCsv  = Join-Path $OutputFolder "SP2019_LibraryStats.csv"
 $UrlIssuesCsv = Join-Path $OutputFolder "SP2019_UrlDepthIssues.csv"
+$IssuesCsv    = Join-Path $OutputFolder "SP2019_IssuesOnly.csv"
 
 # Pretty formatting toggle
 $PrettyOutput = $true
@@ -37,6 +39,7 @@ $UrlWarnLength2            = 400
 
 # Issue detection thresholds
 $ManyCheckedOutThreshold   = 50
+$UniquePermChildrenThreshold = 50  # Option 2: flag if list has >= this many items with unique perms
 
 # Optional scope narrowing (set to non-empty arrays to limit workload)
 $IncludeWebApps = @()   # e.g. @("http://intranet.contoso.com")
@@ -222,7 +225,6 @@ try {
 
             $scAdminsDisplay = @()
             try {
-                # SiteAdministrators can throw if claims principals unresolved; guard with try
                 $scAdminsDisplay = $site.RootWeb.SiteAdministrators | ForEach-Object { Get-DisplayName $_ }
             } catch { Write-ErrorLog -Message $_.Exception.Message -Location "Site Collection Admins: $scUrl" }
             $scAdminsStr = ($scAdminsDisplay | Where-Object { $_ } | Sort-Object -Unique) -join "; "
@@ -309,7 +311,6 @@ try {
                     # Orphaned users (safe)
                     $orphanedUsersCount  = 0
                     try {
-                        # Heuristic: users that are not admins and have no SID/claims resolution often show IsHiddenInUI or LoginName with unresolved claims
                         $orphanedUsersCount = ($web.SiteUsers | Where-Object {
                             try {
                                 (-not $_.IsSiteAdmin) -and
@@ -333,7 +334,6 @@ try {
                     } catch {}
                     try { if ($web.AlternateCssUrl) { $alternateCss = $true } } catch {}
                     try {
-                        # Publishing Feature GUID (Web): 94c94ca6-b32f-4da9-a9e3-1f3d343d7ecb
                         $publishingEnabled = ($web.Features | Where-Object { $_.DefinitionId -eq [Guid]"94c94ca6-b32f-4da9-a9e3-1f3d343d7ecb" }).Count -gt 0
                     } catch {}
 
@@ -347,7 +347,7 @@ try {
                         $customFeaturesWebStr = ($customFeaturesWeb | ForEach-Object { $_.ToString() }) -join "; "
                     } catch {}
 
-                    # Customized (Unghosted) Pages (sampled): scan Site Pages and Pages libraries if they exist
+                    # Customized (Unghosted) Pages (sampled)
                     $unghostedPagesCount = 0
                     try {
                         $pageLibCandidates = @("Site Pages","Pages")
@@ -389,6 +389,14 @@ try {
                     $libStatsForWeb      = @()
                     $urlIssuesCountForWeb= 0
 
+                    # Option 2: Permission complexity flag
+                    $flagPermComplexity = $false
+
+                    # Option 4: Track top offenders
+                    $worstListOver5k = ""
+                    $deepestPathName = ""
+                    $maxDepthSeen    = 0
+
                     try {
                         $listIndex = 0; $totalLists = $web.Lists.Count
 
@@ -401,7 +409,11 @@ try {
                                 $totalItemCount += $itemCount
 
                                 if ($itemCount -gt $largestListItemCount) { $largestListItemCount = $itemCount }
-                                if ($itemCount -gt 5000) { $listsOver5k++ }
+                                if ($itemCount -gt 5000) {
+                                    $listsOver5k++
+                                    # Option 4: capture first list over 5k
+                                    if ([string]::IsNullOrEmpty($worstListOver5k)) { $worstListOver5k = $list.Title }
+                                }
                                 if ($list.HasUniqueRoleAssignments) { $brokenInheritanceLists++; $uniquePermObjects++ }
 
                                 if ($list.BaseTemplate -eq [Microsoft.SharePoint.SPListTemplateType]::XMLForm)       { $infoPathLibrariesCount++ }
@@ -413,7 +425,6 @@ try {
                                         try {
                                             if ($wf.IsDeclarative) { $sp2013WorkflowsCount++ } else { $sp2010WorkflowsCount++ }
                                         } catch {
-                                            # fallback heuristic by BaseTemplateId/Name
                                             if ($wf.BaseTemplateId -eq 15 -or ($wf.Name -like "*2013*")) { $sp2013WorkflowsCount++ } else { $sp2010WorkflowsCount++ }
                                         }
                                     }
@@ -423,6 +434,21 @@ try {
                                     $versioningInfo = "Enabled; Major=$($list.MajorVersionLimit)"
                                     if ($list.EnableMinorVersions) { $versioningInfo += "; Minor=$($list.MajorWithMinorVersionsLimit)" }
                                 }
+
+                                # Option 2: Count items with unique permissions (sampled)
+                                $uniqueChildren = 0
+                                try {
+                                    if ($itemCount -gt 0 -and $itemCount -le $MaxItemsToScanPerList) {
+                                        $q = New-Object Microsoft.SharePoint.SPQuery
+                                        $q.RowLimit = 500
+                                        $q.ViewAttributes = "Scope='RecursiveAll'"
+                                        $items = $list.GetItems($q)
+                                        foreach ($it in $items) {
+                                            try { if ($it.HasUniqueRoleAssignments) { $uniqueChildren++ } } catch {}
+                                        }
+                                    }
+                                } catch {}
+                                if ($uniqueChildren -ge $UniquePermChildrenThreshold) { $flagPermComplexity = $true }
 
                                 $libIsSystem = Test-IsSystemLibrary -List $list
 
@@ -477,6 +503,10 @@ try {
 
                                                         $fUrlLen = if ($folderUrl) { $folderUrl.Length } else { 0 }
                                                         $fDepth  = Get-ServerRelativeDepth -ServerRelativeUrl $folderUrl
+
+                                                        # Option 4: track deepest folder
+                                                        if ($fDepth -gt $maxDepthSeen) { $maxDepthSeen = $fDepth; $deepestPathName = $folder.Name }
+
                                                         if (($fUrlLen -ge $UrlWarnLength1) -or ($fUrlLen -ge $UrlWarnLength2) -or ($fDepth -ge $DeepFolderDepthThreshold)) {
                                                             $urlDepthIssues.Add([PSCustomObject]@{
                                                                 SiteCollectionUrl = $scUrl
@@ -516,7 +546,7 @@ try {
                                             $query = New-Object Microsoft.SharePoint.SPQuery
                                             $query.RowLimit = [uint32]$MaxFilesToScanPerList
                                             $query.ViewAttributes = "Scope='RecursiveAll'"
-                                            $query.Query = "" # no CAML filter
+                                            $query.Query = ""
                                             $filesToScan = $list.GetItems($query)
                                         }
                                     } catch {
@@ -531,7 +561,7 @@ try {
                                                 $fileSize  = $item.File.Length
                                                 $fileSizeMB= [Math]::Round(($fileSize / 1MB), 2)
 
-                                                # Skip system artifacts in catalogs
+                                                # Skip system artifacts
                                                 if ($fileName -like "*.master" -or $fileName -like "*.webpart" -or $fileName -like "*.dwp" -or ($fileName -like "*.aspx" -and $fileUrl -like "*/_catalogs/*")) { continue }
 
                                                 if (Test-InvalidFileName -Name $fileName) { $invalidFileNamesCount++ }
@@ -541,6 +571,10 @@ try {
 
                                                 $fUrlLen = if ($fileUrl) { $fileUrl.Length } else { 0 }
                                                 $fDepth  = Get-ServerRelativeDepth -ServerRelativeUrl $fileUrl
+
+                                                # Option 4: track deepest file
+                                                if ($fDepth -gt $maxDepthSeen) { $maxDepthSeen = $fDepth; $deepestPathName = $fileName }
+
                                                 if (($fUrlLen -ge $UrlWarnLength1) -or ($fUrlLen -ge $UrlWarnLength2) -or ($fDepth -ge $DeepFolderDepthThreshold)) {
                                                     $urlDepthIssues.Add([PSCustomObject]@{
                                                         SiteCollectionUrl = $scUrl
@@ -602,7 +636,7 @@ try {
                         $topLargestFilesStr = ($topLargestFiles | Sort-Object SizeMB -Descending | ForEach-Object { "$($_.Name) ($($_.SizeMB)MB)" }) -join "; "
                     }
 
-                    # Nintex detection hardened
+                    # Option 8: Better Nintex detection
                     $HasNintexForms = $false
                     $HasNintexWorkflow = $false
                     try {
@@ -611,7 +645,7 @@ try {
                             $nintexFeaturesWeb = $web.Features | Where-Object { try { $_.Definition -and $_.Definition.DisplayName -like "*Nintex*" } catch { $false } }
                         } catch {}
                         $HasNintexForms = ($web.Lists.TryGetList("NintexForms") -ne $null) -or ($nintexFeaturesSC.Count -gt 0 -or $nintexFeaturesWeb.Count -gt 0)
-                        # Workflow Gallery scan (WorkflowCatalog)
+                        # Workflow Gallery scan
                         try {
                             $wfGallery = $web.Lists | Where-Object { $_.BaseTemplate -eq [Microsoft.SharePoint.SPListTemplateType]::WorkflowCatalog }
                             if ($wfGallery) {
@@ -633,7 +667,7 @@ try {
                         $libSummary  = "Libraries: $($libStatsForWeb.Count); LargeLibs(>$LargeLibraryThreshold): $largeLibs; FoldersOverView(>$LargeViewFolderThreshold): $foldersOver"
                     } catch { $libSummary = "" }
 
-                    # ========== ISSUE FLAGS AND SEVERITY (OPTION A) ==========
+                    # ========== ISSUE FLAGS AND SEVERITY ==========
                     $flagUrlDepthIssues      = ($urlIssuesCountForWeb -gt 0)
                     $flagLargeLibraries      = (($libStatsForWeb | Where-Object { $_.LargeLibrary }).Count -gt 0)
                     $flagListsOver5k         = ($listsOver5k -gt 0)
@@ -646,6 +680,8 @@ try {
                     $flagBcs                 = ($bcsExternalListsCount -gt 0)
                     $flagBrandingChanges     = ($customMasterPage -or $alternateCss)
                     $flagInactiveOver90      = (-not $last90DayActivity)
+                    # Option 8: Combined Nintex flag
+                    $flagNintexPresent       = ($HasNintexForms -or $HasNintexWorkflow)
 
                     # Weighted severity score (0-100)
                     $severity = 0
@@ -655,13 +691,23 @@ try {
                     if ($flagInvalidNames)    { $severity += 10 }
                     if ($flagUrlOver400)      { $severity += 10 }
                     if ($flagManyCheckedOut)  { $severity += 10 }
+                    if ($flagPermComplexity)  { $severity += 10 }  # Option 2
                     if ($flagUnghostedPages)  { $severity += 5  }
                     if ($flagLegacyWf2010)    { $severity += 5  }
                     if ($flagInfoPath)        { $severity += 5  }
                     if ($flagBcs)             { $severity += 5  }
                     if ($flagBrandingChanges) { $severity += 5  }
                     if ($flagInactiveOver90)  { $severity += 5  }
+                    if ($flagNintexPresent)   { $severity += 5  }  # Option 8
                     if ($severity -gt 100)    { $severity = 100 }
+
+                    # Option 1: Effort Band
+                    $effortBand = switch ($severity) {
+                        {$_ -ge 75} { "Critical" ; break }
+                        {$_ -ge 50} { "High"     ; break }
+                        {$_ -ge 25} { "Medium"   ; break }
+                        default     { "Low"      }
+                    }
 
                     # ========== BUILD RECORD ==========
                     $record = [PSCustomObject]@{
@@ -716,13 +762,19 @@ try {
                         "Issue: Invalid File Names"        = Format-Bool $flagInvalidNames
                         "Issue: File URLs >400"            = Format-Bool $flagUrlOver400
                         "Issue: Many Checked-out Files"    = Format-Bool $flagManyCheckedOut
+                        "Issue: Permission Complexity"     = Format-Bool $flagPermComplexity
                         "Issue: Unghosted Pages"           = Format-Bool $flagUnghostedPages
                         "Issue: Legacy Workflows (2010)"   = Format-Bool $flagLegacyWf2010
                         "Issue: InfoPath Present"          = Format-Bool $flagInfoPath
                         "Issue: BCS External Lists"        = Format-Bool $flagBcs
                         "Issue: Branding Changes"          = Format-Bool $flagBrandingChanges
                         "Issue: Inactive Over 90 Days"     = Format-Bool $flagInactiveOver90
+                        "Issue: Nintex Present"            = Format-Bool $flagNintexPresent
                         "Issue: Severity (0-100)"          = $severity
+                        "Issue: Effort Band"               = $effortBand
+                        "Worst List >5k (sample)"          = $worstListOver5k
+                        "Deepest Object Name (sample)"     = $deepestPathName
+                        "Max Path Depth (sample)"          = $maxDepthSeen
                     }
                     $results.Add($record) | Out-Null
 
@@ -793,12 +845,25 @@ if ($results.Count -gt 0) {
             Export-Csv -NoTypeInformation -Encoding UTF8 -Path $UrlIssuesCsv
     }
 
+    # Export Issues-Only CSV (Severity >= 25 or any critical flag)
+    $issuesOnly = $sortedMain | Where-Object {
+        ($_."Issue: Severity (0-100)" -ge 25) -or
+        ($_."Issue: Has URL/Depth Issues" -eq "Yes") -or
+        ($_."Issue: Lists Over 5k" -eq "Yes") -or
+        ($_."Issue: Permission Complexity" -eq "Yes") -or
+        ($_."Issue: Nintex Present" -eq "Yes")
+    }
+    if ($issuesOnly.Count -gt 0) {
+        $issuesOnly | Export-Csv -NoTypeInformation -Encoding UTF8 -Path $IssuesCsv
+    }
+
     Write-Host "`n========================================" -ForegroundColor Green
     Write-Host "INVENTORY COMPLETE" -ForegroundColor Green
     Write-Host "========================================" -ForegroundColor Green
     Write-Host "CSV written: $CsvPath" -ForegroundColor Cyan
     if ($libraryStats.Count -gt 0) { Write-Host "Library stats CSV: $LibStatsCsv" -ForegroundColor Cyan }
     if ($urlDepthIssues.Count -gt 0) { Write-Host "URL/Depth issues CSV: $UrlIssuesCsv" -ForegroundColor Cyan }
+    if ($issuesOnly.Count -gt 0) { Write-Host "Issues-only CSV: $IssuesCsv" -ForegroundColor Cyan }
     Write-Host "Error log:   $ErrorLog" -ForegroundColor Cyan
 
 } else {
