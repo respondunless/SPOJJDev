@@ -13,16 +13,10 @@
 # Load snapin if needed
 try { Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction Stop } catch {}
 
-# ============================================================================
-# SINGLE SITE COLLECTION OVERRIDE
-# ============================================================================
-# To run against a single site collection, paste the URL below.
-# Leave empty ("") to run against the entire server.
-# Example: $SingleSiteCollectionUrl = "https://sharepoint.contoso.com/sites/marketing"
-$SingleSiteCollectionUrl = ""
-# ============================================================================
-
 # -------------------- Settings --------------------
+# Single Site Collection URL (leave empty to run against all site collections)
+$SingleSiteCollectionUrl = ""  # Example: "https://sharepoint.contoso.com/sites/TeamSite"
+
 $OutputFolder = "C:\Temp"
 $CsvPath      = Join-Path $OutputFolder "SP2019_MigrationInventory.csv"
 $ErrorLog     = Join-Path $OutputFolder "SP2019_MigrationInventory_Errors.log"
@@ -190,26 +184,23 @@ try {
     Write-Host "SharePoint 2019 Migration Inventory" -ForegroundColor Cyan
     Write-Host "========================================`n" -ForegroundColor Cyan
 
-    # Check if running against a single site collection
-    if (-not [string]::IsNullOrWhiteSpace($SingleSiteCollectionUrl)) {
-        Write-Host "Running against SINGLE site collection: $SingleSiteCollectionUrl" -ForegroundColor Yellow
-        try {
-            $allSitesRaw = @(Get-SPSite $SingleSiteCollectionUrl -ErrorAction Stop)
-        } catch {
-            Write-Error "Failed to get site collection '$SingleSiteCollectionUrl': $($_.Exception.Message)"
-            throw
-        }
-    } else {
+    # Check if running against a single site collection or all
+    if ([string]::IsNullOrWhiteSpace($SingleSiteCollectionUrl)) {
+        Write-Host "Mode: Running against ALL site collections" -ForegroundColor Yellow
         Write-Host "Enumerating site collections..." -ForegroundColor Cyan
         $allSitesRaw = Get-SPSite -Limit All -ErrorAction Stop
+    } else {
+        Write-Host "Mode: Running against SINGLE site collection" -ForegroundColor Yellow
+        Write-Host "Target: $SingleSiteCollectionUrl" -ForegroundColor Cyan
+        $allSitesRaw = @(Get-SPSite -Identity $SingleSiteCollectionUrl -ErrorAction Stop)
+    }
 
-        # Optional webapp filters
-        if ($IncludeWebApps.Count -gt 0) {
-            $allSitesRaw = $allSitesRaw | Where-Object { $IncludeWebApps -contains $_.Url.Substring(0, $_.Url.IndexOf('/', 8)) }
-        }
-        if ($ExcludeWebApps.Count -gt 0) {
-            $allSitesRaw = $allSitesRaw | Where-Object { -not ($ExcludeWebApps -contains $_.Url.Substring(0, $_.Url.IndexOf('/', 8))) }
-        }
+    # Optional webapp filters
+    if ($IncludeWebApps.Count -gt 0) {
+        $allSitesRaw = $allSitesRaw | Where-Object { $IncludeWebApps -contains $_.Url.Substring(0, $_.Url.IndexOf('/', 8)) }
+    }
+    if ($ExcludeWebApps.Count -gt 0) {
+        $allSitesRaw = $allSitesRaw | Where-Object { -not ($ExcludeWebApps -contains $_.Url.Substring(0, $_.Url.IndexOf('/', 8))) }
     }
 
     # FILTER: Exclude MySite Host site collections
@@ -415,7 +406,7 @@ try {
                     # Option 4: Track top offenders
                     $worstListOver5k = ""
                     $deepestPathName = ""
-                    $deepestPathUrl  = ""
+                    $deepestObjectUrl = ""
                     $maxDepthSeen    = 0
 
                     try {
@@ -526,7 +517,7 @@ try {
                                                         $fDepth  = Get-ServerRelativeDepth -ServerRelativeUrl $folderUrl
 
                                                         # Option 4: track deepest folder
-                                                        if ($fDepth -gt $maxDepthSeen) { $maxDepthSeen = $fDepth; $deepestPathName = $folder.Name; $deepestPathUrl = $folderUrl }
+                                                        if ($fDepth -gt $maxDepthSeen) { $maxDepthSeen = $fDepth; $deepestPathName = $folder.Name; $deepestObjectUrl = $folderUrl }
 
                                                         if (($fUrlLen -ge $UrlWarnLength1) -or ($fUrlLen -ge $UrlWarnLength2) -or ($fDepth -ge $DeepFolderDepthThreshold)) {
                                                             $urlDepthIssues.Add([PSCustomObject]@{
@@ -580,7 +571,7 @@ try {
                                                 $fileName  = $item.File.Name
                                                 $fileUrl   = $item.File.ServerRelativeUrl
                                                 $fileSize  = $item.File.Length
-                                                $fileSizeMB= [Math]::Round(($fileSize / 1MB), 0)
+                                                $fileSizeMB= [Math]::Round(($fileSize / 1MB), 2)
 
                                                 # Skip system artifacts
                                                 if ($fileName -like "*.master" -or $fileName -like "*.webpart" -or $fileName -like "*.dwp" -or ($fileName -like "*.aspx" -and $fileUrl -like "*/_catalogs/*")) { continue }
@@ -594,7 +585,7 @@ try {
                                                 $fDepth  = Get-ServerRelativeDepth -ServerRelativeUrl $fileUrl
 
                                                 # Option 4: track deepest file
-                                                if ($fDepth -gt $maxDepthSeen) { $maxDepthSeen = $fDepth; $deepestPathName = $fileName; $deepestPathUrl = $fileUrl }
+                                                if ($fDepth -gt $maxDepthSeen) { $maxDepthSeen = $fDepth; $deepestPathName = $fileName; $deepestObjectUrl = $fileUrl }
 
                                                 if (($fUrlLen -ge $UrlWarnLength1) -or ($fUrlLen -ge $UrlWarnLength2) -or ($fDepth -ge $DeepFolderDepthThreshold)) {
                                                     $urlDepthIssues.Add([PSCustomObject]@{
@@ -737,7 +728,7 @@ try {
                         "Site URL"                         = $webUrl
                         "Site Collection URL"              = $scUrl
                         "Subsite Count (SC only)"          = if ($isRootWeb) { Format-Int $subsiteCount } else { "" }
-                        "Site Collection Size (MB)"        = if ($isRootWeb) { Format-Decimal $scSizeMB 2 } else { "" }
+                        "Site Collection Size (MB)"        = if ($isRootWeb) { Format-Int $scSizeMB } else { "" }
                         "Site Owners (Display Names)"      = if ($isRootWeb) { $scOwnersStr } else { "" }
                         "Site Collection Admins (Display)" = if ($isRootWeb) { $scAdminsStr } else { "" }
                         "Owners Group Count"               = Format-Int $ownersGroupCount
@@ -765,11 +756,12 @@ try {
                         "Custom Features (SC) IDs"         = if ($isRootWeb) { $customFeaturesSCStr } else { "" }
                         "Custom Features (Web) IDs"        = $customFeaturesWebStr
                         "InfoPath Libraries"               = Format-Int $infoPathLibrariesCount
+                        "SP 2010 Workflows"                = Format-Int $sp2010WorkflowsCount
                         "SP 2013 Workflows"                = Format-Int $sp2013WorkflowsCount
                         "BCS External Lists"               = Format-Int $bcsExternalListsCount
                         "Nintex Forms Detected"            = Format-Bool $HasNintexForms
                         "Nintex Workflow Detected"         = Format-Bool $HasNintexWorkflow
-                        "Storage Warning (MB) (SC only)"   = if ($isRootWeb) { Format-Decimal $storageWarningMB 0 } else { "" }
+                        "Storage Warning (MB) (SC only)"   = if ($isRootWeb) { Format-Int $storageWarningMB } else { "" }
                         "Recycle Bin Size (MB) (SC only)"  = if ($isRootWeb) { Format-Decimal $recycleBinSizeMB 0 } else { "" }
                         "Issue: Has URL/Depth Issues"      = Format-Bool $flagUrlDepthIssues
                         "Issue: Has Large Libraries"       = Format-Bool $flagLargeLibraries
@@ -789,7 +781,7 @@ try {
                         "Issue: Effort Band"               = $effortBand
                         "Worst List >5k (sample)"          = $worstListOver5k
                         "Deepest Object Name (sample)"     = $deepestPathName
-                        "Deepest Object URL (sample)"      = $deepestPathUrl
+                        "Deepest Object URL (sample)"      = $deepestObjectUrl
                         "Max Path Depth (sample)"          = $maxDepthSeen
                     }
                     $results.Add($record) | Out-Null
