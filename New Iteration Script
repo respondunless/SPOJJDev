@@ -717,7 +717,6 @@ try {
                         "Site URL"                         = $webUrl
                         "Site Collection URL"              = $scUrl
                         "Subsite Count (SC only)"          = if ($isRootWeb) { Format-Int $subsiteCount } else { "" }
-                        "Site Collection Size (GB)"        = if ($isRootWeb) { Format-Decimal $scSizeGB 2 } else { "" }
                         "Site Collection Size (MB)"        = if ($isRootWeb) { Format-Decimal $scSizeMB 2 } else { "" }
                         "Site Owners (Display Names)"      = if ($isRootWeb) { $scOwnersStr } else { "" }
                         "Site Collection Admins (Display)" = if ($isRootWeb) { $scAdminsStr } else { "" }
