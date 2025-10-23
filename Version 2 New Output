@@ -275,16 +275,6 @@ try {
                 $HasNintexFeatureSC = [bool]$nintexFeaturesSC
             } catch { Write-ErrorLog -Message $_.Exception.Message -Location "Nintex Features SC: $scUrl" }
 
-            $customFeaturesSCStr = ""
-            try {
-                $customFeaturesSC = $site.Features | ForEach-Object {
-                    try {
-                        if ($_.Definition -and $_.Definition.Scope -eq "Site" -and -not ($_.DefinitionId -match '^00bfea71-')) { $_.DefinitionId }
-                    } catch {}
-                } | Where-Object { $_ } | Select-Object -Unique
-                $customFeaturesSCStr = ($customFeaturesSC | ForEach-Object { $_.ToString() }) -join "; "
-            } catch { }
-
             $sandboxSolutionsStr = ""
             try { if ($site.Solutions) { $sandboxSolutionsStr = ($site.Solutions | Select-Object -ExpandProperty Name) -join "; " } } catch { }
 
@@ -348,16 +338,6 @@ try {
                         $publishingEnabled = ($web.Features | Where-Object { $_.DefinitionId -eq [Guid]"94c94ca6-b32f-4da9-a9e3-1f3d343d7ecb" }).Count -gt 0
                     } catch {}
 
-                    $customFeaturesWebStr = ""
-                    try {
-                        $customFeaturesWeb = $web.Features | ForEach-Object {
-                            try {
-                                if ($_.Definition -and $_.Definition.Scope -eq "Web" -and -not ($_.DefinitionId -match '^00bfea71-')) { $_.DefinitionId }
-                            } catch {}
-                        } | Where-Object { $_ } | Select-Object -Unique
-                        $customFeaturesWebStr = ($customFeaturesWeb | ForEach-Object { $_.ToString() }) -join "; "
-                    } catch {}
-
                     # Customized (Unghosted) Pages (sampled)
                     $unghostedPagesCount = 0
                     try {
@@ -405,7 +385,6 @@ try {
 
                     # Option 4: Track top offenders
                     $worstListOver5k = ""
-                    $deepestPathName = ""
                     $deepestObjectUrl = ""
                     $maxDepthSeen    = 0
 
@@ -517,7 +496,7 @@ try {
                                                         $fDepth  = Get-ServerRelativeDepth -ServerRelativeUrl $folderUrl
 
                                                         # Option 4: track deepest folder
-                                                        if ($fDepth -gt $maxDepthSeen) { $maxDepthSeen = $fDepth; $deepestPathName = $folder.Name; $deepestObjectUrl = $folderUrl }
+                                                        if ($fDepth -gt $maxDepthSeen) { $maxDepthSeen = $fDepth; $deepestObjectUrl = $folderUrl }
 
                                                         if (($fUrlLen -ge $UrlWarnLength1) -or ($fUrlLen -ge $UrlWarnLength2) -or ($fDepth -ge $DeepFolderDepthThreshold)) {
                                                             $urlDepthIssues.Add([PSCustomObject]@{
@@ -585,7 +564,7 @@ try {
                                                 $fDepth  = Get-ServerRelativeDepth -ServerRelativeUrl $fileUrl
 
                                                 # Option 4: track deepest file
-                                                if ($fDepth -gt $maxDepthSeen) { $maxDepthSeen = $fDepth; $deepestPathName = $fileName; $deepestObjectUrl = $fileUrl }
+                                                if ($fDepth -gt $maxDepthSeen) { $maxDepthSeen = $fDepth; $deepestObjectUrl = $fileUrl }
 
                                                 if (($fUrlLen -ge $UrlWarnLength1) -or ($fUrlLen -ge $UrlWarnLength2) -or ($fDepth -ge $DeepFolderDepthThreshold)) {
                                                     $urlDepthIssues.Add([PSCustomObject]@{
@@ -753,8 +732,6 @@ try {
                         "Total Versions (sample)"          = Format-Int $versionCountTotal
                         "Custom Master Page"               = Format-Bool $customMasterPage
                         "Publishing Enabled"               = Format-Bool $publishingEnabled
-                        "Custom Features (SC) IDs"         = if ($isRootWeb) { $customFeaturesSCStr } else { "" }
-                        "Custom Features (Web) IDs"        = $customFeaturesWebStr
                         "InfoPath Libraries"               = Format-Int $infoPathLibrariesCount
                         "SP 2010 Workflows"                = Format-Int $sp2010WorkflowsCount
                         "SP 2013 Workflows"                = Format-Int $sp2013WorkflowsCount
@@ -780,7 +757,6 @@ try {
                         "Issue: Severity (0-100)"          = $severity
                         "Issue: Effort Band"               = $effortBand
                         "Worst List >5k (sample)"          = $worstListOver5k
-                        "Deepest Object Name (sample)"     = $deepestPathName
                         "Deepest Object URL (sample)"      = $deepestObjectUrl
                         "Max Path Depth (sample)"          = $maxDepthSeen
                     }
