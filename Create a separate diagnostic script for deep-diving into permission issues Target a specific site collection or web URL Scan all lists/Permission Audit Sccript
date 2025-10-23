@@ -1,0 +1,364 @@
+# ============================================================================
+# SharePoint 2019 Unique Permissions Audit Script
+# ============================================================================
+# Purpose: Deep-dive into a specific site to find all items/folders with
+#          unique (broken inheritance) permissions
+# Use Case: Run this when main inventory flags "Issue: Permission Complexity"
+# Requires: SharePoint 2019 Management Shell (Run as Farm Admin)
+# Output: Detailed CSV showing every object with unique permissions
+# ============================================================================
+
+# Load snapin if needed
+try { Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction Stop } catch {}
+
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+
+# Target site (REQUIRED - set this to the site flagged in your main report)
+$TargetSiteUrl = "https://sharepoint.contoso.com/sites/TeamSite"
+
+# Output settings
+$OutputFolder = "C:\Temp"
+$CsvPath      = Join-Path $OutputFolder "PermissionAudit_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+$ErrorLog     = Join-Path $OutputFolder "PermissionAudit_Errors.log"
+
+# Performance limits (adjust based on your environment)
+$MaxItemsPerList = 5000  # Set to 0 for unlimited (warning: can be slow on large lists)
+$IncludeSystemLibraries = $false  # Set to $true to include system libraries
+
+# Permission detail level
+$ShowPermissionDetails = $true  # Include who has access and their permission levels
+
+# ============================================================================
+
+# Validate target URL
+if ([string]::IsNullOrWhiteSpace($TargetSiteUrl)) {
+    Write-Error "ERROR: You must set `$TargetSiteUrl to a valid site URL"
+    exit
+}
+
+# Create output folder
+if (-not (Test-Path $OutputFolder)) { New-Item -ItemType Directory -Path $OutputFolder | Out-Null }
+
+# Initialize error log
+"SharePoint 2019 Unique Permissions Audit - Error Log" | Out-File $ErrorLog
+"Started: $(Get-Date)" | Out-File $ErrorLog -Append
+"Target: $TargetSiteUrl" | Out-File $ErrorLog -Append
+"=" * 80 | Out-File $ErrorLog -Append
+
+$results = New-Object System.Collections.Generic.List[object]
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+function Write-ErrorLog {
+    param([string]$Message, [string]$Location)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    "$timestamp | $Location | $Message" | Out-File $ErrorLog -Append
+}
+
+function Test-IsSystemLibrary {
+    param([Microsoft.SharePoint.SPList]$List)
+    try {
+        $url = $List.RootFolder.ServerRelativeUrl
+        $title = $List.Title
+
+        if ($url -match '/_catalogs/' -or
+            $url -match '/Style Library($|/)' -or
+            $url -match '/Site Assets($|/)' -or
+            $url -match '/Site Pages($|/)' -or
+            $url -match '/Pages($|/)' -or
+            $url -match '/Form Templates($|/)') { return $true }
+
+        $sysTitles = @(
+            "Site Assets","Site Pages","Style Library","Form Templates","Pages",
+            "Relationships List","Composed Looks","MicroFeed",
+            "List Template Gallery","Web Part Gallery","Workflow History","Workflow Tasks",
+            "User Information List","Workflow","Workflow Gallery","Maintenance Logs",
+            "Converted Forms","Reusable Content"
+        )
+        if ($sysTitles -contains $title) { return $true }
+
+        return $false
+    } catch { return $false }
+}
+
+function Get-PermissionSummary {
+    param([Microsoft.SharePoint.SPRoleAssignmentCollection]$RoleAssignments)
+    
+    $summary = @()
+    
+    try {
+        foreach ($ra in $RoleAssignments) {
+            try {
+                $member = $ra.Member
+                $memberName = if ($member.Name) { $member.Name } else { $member.LoginName }
+                $memberType = $member.GetType().Name  # SPUser, SPGroup, etc.
+                
+                $roles = @()
+                foreach ($rb in $ra.RoleDefinitionBindings) {
+                    $roles += $rb.Name
+                }
+                
+                $summary += "$memberName [$memberType] = $($roles -join ', ')"
+            } catch {
+                $summary += "Error reading assignment"
+            }
+        }
+    } catch {
+        return "Error reading permissions"
+    }
+    
+    return ($summary -join " | ")
+}
+
+# ============================================================================
+# MAIN SCRIPT
+# ============================================================================
+
+Write-Host "`n========================================" -ForegroundColor Cyan
+Write-Host "SharePoint Unique Permissions Audit" -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "Target: $TargetSiteUrl" -ForegroundColor Yellow
+Write-Host "Output: $CsvPath`n" -ForegroundColor Yellow
+
+$assignment = Start-SPAssignment
+
+try {
+    # Get the target web
+    $web = Get-SPWeb $TargetSiteUrl -ErrorAction Stop -AssignmentCollection $assignment
+    
+    Write-Host "Scanning web: $($web.Title)" -ForegroundColor Green
+    Write-Host "URL: $($web.Url)`n" -ForegroundColor Green
+    
+    # Check if web itself has unique permissions
+    $webHasUnique = $false
+    try { $webHasUnique = $web.HasUniqueRoleAssignments } catch {}
+    
+    if ($webHasUnique) {
+        Write-Host "[!] Web has unique permissions" -ForegroundColor Yellow
+        
+        $permSummary = ""
+        if ($ShowPermissionDetails) {
+            $permSummary = Get-PermissionSummary -RoleAssignments $web.RoleAssignments
+        }
+        
+        $results.Add([PSCustomObject]@{
+            WebUrl              = $web.Url
+            ListTitle           = "N/A (Web Level)"
+            ObjectType          = "Web"
+            ObjectTitle         = $web.Title
+            ObjectUrl           = $web.Url
+            ServerRelativeUrl   = $web.ServerRelativeUrl
+            HasUniquePerms      = "Yes"
+            PermissionSummary   = $permSummary
+            ParentListItemCount = "N/A"
+            Notes               = "Site/subsite has broken inheritance"
+        }) | Out-Null
+    }
+    
+    # Scan all lists
+    $listCount = $web.Lists.Count
+    $listIndex = 0
+    
+    Write-Host "Found $listCount lists/libraries to scan`n" -ForegroundColor Cyan
+    
+    foreach ($list in $web.Lists) {
+        $listIndex++
+        $percentComplete = [Math]::Round(($listIndex / [Math]::Max(1, $listCount)) * 100, 1)
+        Write-Progress -Activity "Scanning Lists/Libraries" -Status "List $listIndex of $listCount - $($list.Title)" -PercentComplete $percentComplete -Id 0
+        
+        try {
+            # Skip system libraries if configured
+            if (-not $IncludeSystemLibraries) {
+                if (Test-IsSystemLibrary -List $list) {
+                    Write-Host "  [SKIP] $($list.Title) (system library)" -ForegroundColor DarkGray
+                    continue
+                }
+            }
+            
+            $listTitle = $list.Title
+            $listUrl = ""
+            try { $listUrl = $list.DefaultViewUrl } catch {}
+            
+            $itemCount = $list.ItemCount
+            
+            Write-Host "  Scanning: $listTitle ($itemCount items)" -ForegroundColor Cyan
+            
+            # Check if list itself has unique permissions
+            $listHasUnique = $false
+            try { $listHasUnique = $list.HasUniqueRoleAssignments } catch {}
+            
+            if ($listHasUnique) {
+                Write-Host "    [!] List has unique permissions" -ForegroundColor Yellow
+                
+                $permSummary = ""
+                if ($ShowPermissionDetails) {
+                    $permSummary = Get-PermissionSummary -RoleAssignments $list.RoleAssignments
+                }
+                
+                $results.Add([PSCustomObject]@{
+                    WebUrl              = $web.Url
+                    ListTitle           = $listTitle
+                    ObjectType          = "List/Library"
+                    ObjectTitle         = $listTitle
+                    ObjectUrl           = $listUrl
+                    ServerRelativeUrl   = $list.RootFolder.ServerRelativeUrl
+                    HasUniquePerms      = "Yes"
+                    PermissionSummary   = $permSummary
+                    ParentListItemCount = $itemCount
+                    Notes               = "List/Library has broken inheritance"
+                }) | Out-Null
+            }
+            
+            # Scan items (with limit)
+            if ($itemCount -eq 0) {
+                Write-Host "    (empty list)" -ForegroundColor DarkGray
+                continue
+            }
+            
+            if ($MaxItemsPerList -gt 0 -and $itemCount -gt $MaxItemsPerList) {
+                Write-Host "    [LIMIT] Scanning first $MaxItemsPerList of $itemCount items" -ForegroundColor Yellow
+            }
+            
+            # Build query
+            $query = New-Object Microsoft.SharePoint.SPQuery
+            $query.ViewAttributes = "Scope='RecursiveAll'"
+            if ($MaxItemsPerList -gt 0) {
+                $query.RowLimit = [uint32]$MaxItemsPerList
+            }
+            
+            $items = $list.GetItems($query)
+            $uniqueCount = 0
+            
+            foreach ($item in $items) {
+                try {
+                    $hasUnique = $false
+                    try { $hasUnique = $item.HasUniqueRoleAssignments } catch {}
+                    
+                    if ($hasUnique) {
+                        $uniqueCount++
+                        
+                        $itemTitle = ""
+                        try { $itemTitle = $item.Title } catch {}
+                        if ([string]::IsNullOrWhiteSpace($itemTitle)) {
+                            try { $itemTitle = $item.Name } catch {}
+                        }
+                        if ([string]::IsNullOrWhiteSpace($itemTitle)) {
+                            $itemTitle = "(No Title)"
+                        }
+                        
+                        $itemUrl = ""
+                        try {
+                            if ($item.File -and $item.File.Exists) {
+                                $itemUrl = $item.File.ServerRelativeUrl
+                            } elseif ($item.Folder -and $item.Folder.Exists) {
+                                $itemUrl = $item.Folder.ServerRelativeUrl
+                            } else {
+                                $itemUrl = "$($web.Url)/Lists/$($list.Title)/DispForm.aspx?ID=$($item.ID)"
+                            }
+                        } catch {
+                            $itemUrl = "(URL unavailable)"
+                        }
+                        
+                        $objectType = "List Item"
+                        try {
+                            if ($item.FileSystemObjectType -eq [Microsoft.SharePoint.SPFileSystemObjectType]::Folder) {
+                                $objectType = "Folder"
+                            } elseif ($item.File -and $item.File.Exists) {
+                                $objectType = "File"
+                            }
+                        } catch {}
+                        
+                        $permSummary = ""
+                        if ($ShowPermissionDetails) {
+                            $permSummary = Get-PermissionSummary -RoleAssignments $item.RoleAssignments
+                        }
+                        
+                        $results.Add([PSCustomObject]@{
+                            WebUrl              = $web.Url
+                            ListTitle           = $listTitle
+                            ObjectType          = $objectType
+                            ObjectTitle         = $itemTitle
+                            ObjectUrl           = $itemUrl
+                            ServerRelativeUrl   = $itemUrl
+                            HasUniquePerms      = "Yes"
+                            PermissionSummary   = $permSummary
+                            ParentListItemCount = $itemCount
+                            Notes               = "Item/Folder has broken inheritance"
+                        }) | Out-Null
+                    }
+                } catch {
+                    Write-ErrorLog -Message $_.Exception.Message -Location "Item scan: $listTitle - Item ID $($item.ID)"
+                }
+            }
+            
+            if ($uniqueCount -gt 0) {
+                Write-Host "    [FOUND] $uniqueCount items/folders with unique permissions" -ForegroundColor Red
+            } else {
+                Write-Host "    (no unique permissions on items)" -ForegroundColor Green
+            }
+            
+        } catch {
+            Write-Warning "Error scanning list $($list.Title): $($_.Exception.Message)"
+            Write-ErrorLog -Message $_.Exception.Message -Location "List scan: $($list.Title)"
+        }
+    }
+    
+    Write-Progress -Activity "Scanning Lists/Libraries" -Id 0 -Completed
+    
+} catch {
+    Write-Error "Fatal error: $($_.Exception.Message)"
+    Write-ErrorLog -Message $_.Exception.Message -Location "Main execution"
+} finally {
+    try { Stop-SPAssignment $assignment } catch {}
+}
+
+# ============================================================================
+# EXPORT RESULTS
+# ============================================================================
+
+Write-Host "`n========================================" -ForegroundColor Green
+Write-Host "SCAN COMPLETE" -ForegroundColor Green
+Write-Host "========================================" -ForegroundColor Green
+
+if ($results.Count -gt 0) {
+    # Sort by list, then object type
+    $sortedResults = $results | Sort-Object ListTitle, ObjectType, ObjectTitle
+    
+    $sortedResults | Export-Csv -NoTypeInformation -Encoding UTF8 -Path $CsvPath
+    
+    Write-Host "Total objects with unique permissions: $($results.Count)" -ForegroundColor Yellow
+    Write-Host "`nBreakdown:" -ForegroundColor Cyan
+    
+    $breakdown = $results | Group-Object ObjectType | Sort-Object Count -Descending
+    foreach ($group in $breakdown) {
+        Write-Host "  $($group.Name): $($group.Count)" -ForegroundColor Yellow
+    }
+    
+    Write-Host "`nOutput saved to: $CsvPath" -ForegroundColor Green
+    Write-Host "Error log: $ErrorLog" -ForegroundColor Cyan
+    
+    # Summary by list
+    Write-Host "`nTop lists with unique permission items:" -ForegroundColor Cyan
+    $listSummary = $results | Where-Object { $_.ObjectType -ne "Web" -and $_.ObjectType -ne "List/Library" } | 
+                   Group-Object ListTitle | 
+                   Sort-Object Count -Descending | 
+                   Select-Object -First 10
+    
+    foreach ($ls in $listSummary) {
+        Write-Host "  $($ls.Name): $($ls.Count) items" -ForegroundColor Yellow
+    }
+    
+} else {
+    Write-Host "No objects with unique permissions found!" -ForegroundColor Green
+    Write-Host "This site has clean permission inheritance." -ForegroundColor Green
+}
+
+Write-Host "`n========================================`n" -ForegroundColor Green
+
+# ============================================================================
+# END OF SCRIPT
+# ============================================================================
