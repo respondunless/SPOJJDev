@@ -31,7 +31,7 @@ $PrettyOutput = $true
 $MaxFilesToScanPerList    = 1000
 $MaxItemsToScanPerList    = 5000
 $MaxUnghostedPagesToScan  = 500
-$MinFileSizeMB            = 5
+$MinFileSizeMB            = 25
 
 # Library/URL analysis thresholds
 $LargeLibraryThreshold     = 10000
@@ -722,7 +722,7 @@ try {
                         "Largest List Item Count"          = Format-Int $largestListItemCount
                         "Library Stats Summary"            = $libSummary
                         "URL/Depth Issues (Count)"         = Format-Int $urlIssuesCountForWeb
-                        "Top 10 Largest Files (>=5MB)"     = $topLargestFilesStr
+                        "Top 10 Largest Files (>=25MB)"    = $topLargestFilesStr
                         "Invalid File Names (Count)"       = Format-Int $invalidFileNamesCount
                         "Illegal Characters (Total)"       = Format-Int $illegalCharsCount
                         "File URLs >400 chars (Count)"     = Format-Int $urlTooLongCount
