@@ -1,0 +1,230 @@
+<#
+.SYNOPSIS
+Scans ALL site collections in ALL web applications on a SharePoint 2019 farm and reports list item attachments.
+
+.DESCRIPTION
+- SSOM-based; run in "SharePoint 2019 Management Shell" on an app server.
+- Enumerates every SPWebApplication -> SPSite -> SPWeb (recursive).
+- Targets non-document-library lists that have attachments enabled.
+- Queries only items that actually have attachments using CAML and paging.
+- Enumerates each attachment (name, url, size, dates).
+- Writes a detailed CSV and a summary CSV (counts per site/list).
+- Uses assignment collections and proper disposal to avoid memory leaks.
+
+.PARAMETER OutputFolder
+Folder to write output CSVs and log. Default: current directory.
+
+.PARAMETER IncludeHiddenLists
+Include hidden/system lists (off by default).
+
+.PARAMETER IncludeExtensions
+Limit to certain extensions. Pass @() to include all. Default common office/image/msg/pdf/txt.
+
+.EXAMPLE
+.\Scan-AllListAttachments-SSOM.ps1 -OutputFolder "D:\Reports"
+
+#>
+
+[CmdletBinding()]
+param(
+    [string]$OutputFolder = ".",
+    [switch]$IncludeHiddenLists,
+    [string[]]$IncludeExtensions = @("doc","docx","xls","xlsx","ppt","pptx","pdf","msg","jpg","jpeg","png","gif","tif","tiff","bmp","txt")
+)
+
+# Ensure SharePoint snapin
+try {
+    Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction Stop
+} catch {
+    Write-Error "Unable to load Microsoft.SharePoint.PowerShell snapin. Run in SharePoint Management Shell."
+    exit 1
+}
+
+# Prepare output
+if (-not (Test-Path -Path $OutputFolder)) { New-Item -ItemType Directory -Path $OutputFolder | Out-Null }
+$timestamp = (Get-Date).ToString("yyyyMMdd_HHmmss")
+$detailCsv = Join-Path $OutputFolder ("ListAttachments_Detail_{0}.csv" -f $timestamp)
+$summaryCsv = Join-Path $OutputFolder ("ListAttachments_Summary_{0}.csv" -f $timestamp)
+$logFile   = Join-Path $OutputFolder ("ListAttachments_Log_{0}.txt" -f $timestamp)
+
+# Simple logger
+function Write-Log {
+    param([string]$Message, [string]$Level = "INFO")
+    $line = "[{0}] {1} {2}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Level.ToUpper(), $Message
+    $line | Tee-Object -FilePath $logFile -Append
+}
+
+Write-Log "Starting farm-wide list attachment scan."
+
+# Collections for results
+$detailRows = New-Object System.Collections.Generic.List[object]
+$summaryKey = "{0}||{1}||{2}"  # format: SiteUrl || ListId || ListTitle
+$summary = @{}
+
+# Helper: build item display URL reliably
+function Get-ItemDisplayUrl {
+    param(
+        [Microsoft.SharePoint.SPWeb]$Web,
+        [Microsoft.SharePoint.SPList]$List,
+        [Microsoft.SharePoint.SPListItem]$Item
+    )
+    try {
+        if ($List.DefaultDisplayFormUrl) {
+            $base = $Web.Url.TrimEnd('/') + "/" + $List.DefaultDisplayFormUrl.TrimStart('/')
+            if ($base -notmatch "\?") {
+                return "$base?ID=$($Item.ID)"
+            } else {
+                return "$base&ID=$($Item.ID)"
+            }
+        } else {
+            return "$($Web.Url)/_layouts/15/listform.aspx?PageType=4&ListId=$([System.Uri]::EscapeDataString($List.ID.ToString()))&ID=$($Item.ID)"
+        }
+    } catch {
+        return "$($Web.Url)/_layouts/15/listform.aspx?PageType=4&ListId=$([System.Uri]::EscapeDataString($List.ID.ToString()))&ID=$($Item.ID)"
+    }
+}
+
+# Process a single list with proper paging
+function Process-List {
+    param(
+        [Microsoft.SharePoint.SPWeb]$Web,
+        [Microsoft.SharePoint.SPList]$List
+    )
+
+    Write-Log ("Scanning list '{0}' at {1}" -f $List.Title, $Web.Url)
+
+    $query = New-Object Microsoft.SharePoint.SPQuery
+    $query.Query = "<Where><Eq><FieldRef Name='Attachments'/><Value Type='Integer'>1</Value></Eq></Where>"
+    $query.RowLimit = 2000
+    $query.ViewAttributes = "Scope='Recursive'"
+
+    do {
+        $items = $List.GetItems($query)
+        foreach ($item in $items) {
+            if (-not $item.Attachments -or $item.Attachments.Count -eq 0) { continue }
+
+            # Resolve attachments folder and iterate
+            foreach ($attRel in $item.Attachments) {
+                # Build server-relative URL to the file
+                $attUrl = ($item.Attachments.UrlPrefix.TrimEnd('/') + '/' + $attRel).Replace("//","/")
+                $file = $null
+                try {
+                    $file = $Web.GetFile($attUrl)
+                    if ($file -and $file.Exists) {
+                        $name = $file.Name
+                        $ext = ""
+                        if ($name -like "*.*") { $ext = ($name.Split('.') | Select-Object -Last 1).ToLowerInvariant() }
+
+                        # Extension filter
+                        if ($IncludeExtensions.Count -eq 0 -or $IncludeExtensions -contains $ext) {
+                            $detailRows.Add([pscustomobject]@{
+                                WebAppUrl       = $Web.Site.WebApplication.Url
+                                SiteUrl         = $Web.Site.Url
+                                WebUrl          = $Web.Url
+                                ListId          = $List.ID
+                                ListTitle       = $List.Title
+                                ListUrl         = $Web.Url.TrimEnd('/') + "/" + $List.DefaultViewUrl.TrimStart('/')
+                                ItemID          = $item.ID
+                                ItemUrl         = (Get-ItemDisplayUrl -Web $Web -List $List -Item $item)
+                                AttachmentName  = $name
+                                AttachmentUrl   = $Web.Url.TrimEnd('/') + "/" + $file.ServerRelativeUrl.TrimStart('/')
+                                Extension       = $ext
+                                SizeKB          = [math]::Round(($file.Length/1KB),2)
+                                Created         = $file.TimeCreated
+                                Modified        = $file.TimeLastModified
+                            })
+                        }
+
+                        # Summary count
+                        $k = ("{0}||{1}||{2}" -f $Web.Site.Url, $List.ID, $List.Title)
+                        if (-not $summary.ContainsKey($k)) { $summary[$k] = 0 }
+                        $summary[$k] += 1
+                    }
+                } catch {
+                    Write-Log ("Failed to get attachment file '{0}' in list '{1}' on {2}. Error: {3}" -f $attRel, $List.Title, $Web.Url, $_.Exception.Message) "WARN"
+                } finally {
+                    # $file is managed by SP; no Dispose
+                }
+            }
+        }
+        $query.ListItemCollectionPosition = $items.ListItemCollectionPosition
+    } while ($query.ListItemCollectionPosition -ne $null)
+}
+
+# Enumerate farm
+$waCollection = Get-SPWebApplication
+foreach ($wa in $waCollection) {
+    Write-Log ("Web Application: {0}" -f $wa.Url)
+
+    # Use assignment to ensure site disposal in loops
+    $siteAssign = Start-SPAssignment
+    try {
+        $sites = Get-SPSite -WebApplication $wa -Limit All
+        foreach ($s in $sites) {
+            # Add site to assignment collection so it will be disposed
+            $site = $siteAssign | Add-SPAssignment -InputObject $s
+            Write-Log (" Site Collection: {0}" -f $site.Url)
+
+            # Enumerate all webs safely
+            try {
+                foreach ($web in $site.AllWebs) {
+                    try {
+                        Write-Log ("  Web: {0}" -f $web.Url)
+
+                        # Lists to scan: non-doc libraries, attachments enabled, visible unless included
+                        $targetLists = $web.Lists | Where-Object {
+                            $_.BaseType -ne [Microsoft.SharePoint.SPBaseType]::DocumentLibrary -and
+                            $_.EnableAttachments -eq $true -and
+                            ($IncludeHiddenLists.IsPresent -or $_.Hidden -eq $false)
+                        }
+
+                        foreach ($list in $targetLists) {
+                            try {
+                                Process-List -Web $web -List $list
+                            } catch {
+                                Write-Log ("   Error processing list '{0}' at {1}: {2}" -f $list.Title, $web.Url, $_.Exception.Message) "ERROR"
+                            }
+                        }
+                    } finally {
+                        if ($web -ne $null) { $web.Dispose() }
+                    }
+                }
+            } catch {
+                Write-Log (" Error enumerating webs in site {0}: {1}" -f $site.Url, $_.Exception.Message) "ERROR"
+            }
+        }
+    } finally {
+        Stop-SPAssignment $siteAssign
+    }
+}
+
+# Write outputs
+try {
+    $detailRows | Export-Csv -NoTypeInformation -Path $detailCsv -Encoding UTF8
+    Write-Log ("Detail CSV written: {0}" -f $detailCsv)
+} catch {
+    Write-Log ("Failed to write detail CSV: {0}" -f $_.Exception.Message) "ERROR"
+}
+
+# Build and write summary
+try {
+    $summaryRows = foreach ($k in $summary.Keys) {
+        $parts = $k.Split("||")
+        [pscustomobject]@{
+            SiteUrl   = $parts[0]
+            ListId    = $parts[1]
+            ListTitle = $parts[2]
+            AttachmentCount = $summary[$k]
+        }
+    }
+    $summaryRows | Sort-Object SiteUrl, ListTitle | Export-Csv -NoTypeInformation -Path $summaryCsv -Encoding UTF8
+    Write-Log ("Summary CSV written: {0}" -f $summaryCsv)
+} catch {
+    Write-Log ("Failed to write summary CSV: {0}" -f $_.Exception.Message) "ERROR"
+}
+
+Write-Log "Completed farm-wide list attachment scan."
+Write-Host "Done. Outputs:" -ForegroundColor Green
+Write-Host " Detail:  $detailCsv"
+Write-Host " Summary: $summaryCsv"
+Write-Host " Log:     $logFile"
