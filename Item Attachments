@@ -1,0 +1,81 @@
+Checklist
+Highlight SharePoint Online (SPO) realities that make attachments worse: scale limits, throttling, compliance model, automation patterns
+Translate into leadership-friendly impacts: risk, cost, performance, user experience
+Provide SPO-specific alternatives: retention labels, record versioning, Document Sets, “Publish to Record” flows
+Note migration and future-proofing risks if we keep attachments today
+Offer a simple transition plan for 2019 → SPO with minimal disruption
+Validate alignment to records-focused goals
+Reasoning
+
+SPO tightens throttling, leans on document-centric compliance (labels/holds), and favors automation/search over list-item attachments. What’s “nuisance” on-prem becomes expensive and risky in the cloud. Below are non-technical, management-ready talking points that position this as risk reduction and smoother migration.
+
+Management-friendly arguments against attachments when moving to SharePoint Online
+Cloud performance and throttling
+What they hear: “Attachments slow things down and trigger cloud limits.”
+Impact: SPO enforces strict list thresholds and throttling. Big items with multiple attachments degrade page loads and can cause intermittent errors, creating support noise.
+Higher operational cost in the cloud
+“Attachments are harder to administer and troubleshoot in SPO.”
+Impact: More time spent by IT and vendors during incidents or changes. That’s billable hours and slower delivery.
+Compliance in SPO is document-first
+“Retention labels, legal holds, and eDiscovery in Microsoft 365 target documents, not list attachments.”
+Impact: Attachments make it harder and slower to prove compliance, increasing audit time and risk.
+Search and Microsoft 365 Copilot work better with files in libraries
+“Copilot, search, and Viva topics surface documents stored properly.”
+Impact: Attachments are less visible to these tools, reducing the value of our M365 investment.
+Sharing and external collaboration guardrails
+“Cloud sharing works best with document links and file permissions.”
+Impact: Attachments tied to list items complicate safe sharing, leading to over-sharing or blocked work.
+Migration friction and data quality loss
+“Attachments are the first thing to break or get messy in a move.”
+Impact: Extra migration effort, more manual fixes, potential data loss, and increased project cost/time.
+Records management expectations from Microsoft Purview
+“Purview labels, disposition reviews, and holds expect a proper document location.”
+Impact: Attachments lead to gaps: records aren’t labeled consistently, holds are incomplete, and dispositions are harder to evidence.
+Automation and approvals in Power Platform
+“Power Automate templates and approvals assume a document in a library.”
+Impact: With attachments, we end up building custom workarounds. That’s slower, costlier, and harder to maintain.
+User experience and mobile
+“In SPO, users expect to open, co-author, and share a single file link.”
+Impact: Attachments push people to download/upload cycles—frustrating on mobile and increases errors.
+Governance and reporting
+“We can’t easily report on which attachments are records, labeled, or past retention.”
+Impact: Leadership loses visibility; we can’t show a clean dashboard of our record posture.
+Security and sensitivity labels
+“Sensitivity labels travel with files in libraries.”
+Impact: With attachments, labeled content is easier to mishandle or duplicate without the right protections.
+Future tech alignment
+“SPO and Microsoft releases assume documents in libraries.”
+Impact: New features (Copilot prompts, loop components, advanced search) won’t help if we keep files trapped as attachments.
+Simple, SPO-aligned alternatives (keep it business-focused)
+One source of truth: a Records library
+Store the final record in a library, apply a retention label, and lock it. Link it from the list item.
+“Publish to Record” button
+A flow converts the final doc to PDF, uploads to the Records library, tags it, and writes back the link.
+Case = Document Set
+Use a Document Set per request/case; everything related is in one place with labels and permissions.
+Turn off list attachments on key business lists
+Replace with a “Record link” field and a simple upload experience targeting the library.
+Transition plan (2019 now, SPO later)
+Now (on-prem):
+Create a Records library with content approval and major versions; enable Document IDs.
+Add a “Record link” column to lists; reduce or disable attachments where feasible.
+Provide a one-click upload to the library (PowerShell/Flow/Power Apps) that returns the link.
+Pre-migration:
+Extract existing attachments and move them into the target library structure (folders/Document Sets by Case ID), write links back into list items.
+Tag with basic metadata (Owner, Case ID, Status) to improve future search/Copilot.
+In SPO:
+Apply Purview retention labels/policies to the Records library; lock final versions.
+Use standard Power Automate “Document approval” on the file itself.
+Add dashboards for labeled records, items on hold, and upcoming disposition.
+Sound bites for leadership
+“In the cloud, attachments cost more and prove less.”
+“SPO compliance is document-first. Let’s store records where compliance can find them.”
+“One link to the official record reduces audit time and rework.”
+“Let’s be Copilot-ready: files in libraries, not buried as attachments.”
+Quick proof points you can share
+Time-to-find reduction: “Moving to library links cut search time from minutes to seconds.”
+Audit prep: “We can export labeled records with their history in one step.”
+Migration cost: “Attachments added 15–30% effort in past moves; library-first avoids that.”
+Validation
+These arguments map directly to SPO’s strengths (compliance, automation, search) and cloud constraints (throttling, governance).
+Next step: I can draft a one-page executive brief or a 5-slide deck to socialize this change, plus a simple “Publish to Record” flow pattern for your process. Would you like slides or an email brief?
