@@ -15,7 +15,7 @@ try { Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction Stop } catch {}
 
 # -------------------- Settings --------------------
 # Single Site Collection URL (leave empty to run against all site collections)
-$SingleSiteCollectionUrl = ""  # Example: "https://sharepoint.contoso.com/sites/TeamSite"
+$SingleSiteCollectionUrl = ""
 
 $OutputFolder = "C:\Temp"
 $CsvPath      = Join-Path $OutputFolder "SP2019_MigrationInventory.csv"
@@ -45,7 +45,7 @@ $ManyCheckedOutThreshold   = 50
 $UniquePermChildrenThreshold = 50  # Option 2: flag if list has >= this many items with unique perms
 
 # Optional scope narrowing (set to non-empty arrays to limit workload)
-$IncludeWebApps = @()   # e.g. @("http://intranet.contoso.com")
+$IncludeWebApps = @()
 $ExcludeWebApps = @()
 
 # --------------------------------------------------
