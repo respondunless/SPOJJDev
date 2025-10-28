@@ -1,5 +1,5 @@
 # ============================================================================
-# SharePoint 2019 Migration Inventory Script - REFINED
+# SharePoint 2019 Migration Inventory Script - Joel
 # ============================================================================
 # Purpose: Comprehensive site collection and web inventory for migration planning
 # Requires: SharePoint 2019 Management Shell (Run as Farm Admin on App server)
