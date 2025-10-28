@@ -1,0 +1,102 @@
+### Checklist
+- Confirm audience and decision objective
+- Emphasize business outcomes over technical details
+- Cite Microsoft guidance supporting a flat architecture
+- Compare “stay with subsites” vs “move to site collections”
+- Highlight governance, security, UX, and cost benefits
+- Provide clear recommendation and success metrics
+- Validate that content supports a management decision
+
+### Reasoning
+- Your audience wants a compelling “why” rooted in best practice, risk, cost, and employee experience—without implementation detail.
+- Microsoft recommends a flat site architecture in SharePoint Online; subsites introduce long-term rigidity and risk.
+- Framing the decision in terms of business risk, TCO, compliance, and future-proofing best supports executive buy-in.
+
+### Discussion Paper: Why Move From Subsites to Site Collections in SharePoint Online
+
+#### Executive Summary
+As we adopt SharePoint Online, we recommend a modern, “flat” information architecture built on separate site collections connected by hub sites. This design is Microsoft’s best practice and delivers measurable business value: stronger security and compliance, lower total cost of ownership (TCO), better user experience and search, and seamless integration with Microsoft Teams and the broader Microsoft 365 platform. Remaining on a subsite-heavy structure increases risk, complicates governance, and limits agility.
+
+Decision requested: Endorse the move to site collections (with hubs) as our standard, replacing deep subsite structures.
+
+#### The Business Case: Why This Matters
+- Risk reduction and compliance
+  - Independent security boundaries: Each site has clear Owners/Members/Visitors, making access reviews, audits, and segregation of sensitive content simpler and safer.
+  - Predictable policies: Sensitivity labels, retention, DLP, and legal holds apply cleanly at the site level—no brittle inheritance chains.
+  - Easier exceptions: Confidential or regulated content can be isolated without disrupting unrelated areas.
+- Lower TCO and operational efficiency
+  - Cleaner governance: Standard templates and automated provisioning reduce admin effort and support tickets.
+  - Cheaper change: Renames, reorganizations, and mergers are simpler when sites are independent—not nested.
+  - Reduced rework: Avoids technical debt from inherited navigation/permissions and legacy features that don’t map well to modern SharePoint.
+- Better employee experience and adoption
+  - Consistent navigation and branding via hub sites improve findability and trust.
+  - More relevant search across related sites; news and content rollups are consistent.
+  - Microsoft Teams alignment: Each team has a dedicated site, reducing confusion and improving productivity.
+- Future-proof and Microsoft-aligned
+  - Microsoft invests in the flat model (modern team sites, communication sites, hub sites, M365 Groups, Viva).
+  - Modern capabilities assume or work best at the site-collection level; deep subsite trees limit adoption.
+
+Authoritative Microsoft references:
+- [SharePoint hub sites](https://learn.microsoft.com/sharepoint/planning-hub-sites)
+- [Information architecture planning (modern experience)](https://learn.microsoft.com/sharepoint/information-architecture-modern-experience)
+- [Plan sites and manage users](https://learn.microsoft.com/sharepoint/plan-sites-and-manage-users)
+- [Manage site creation in SharePoint Online](https://learn.microsoft.com/sharepoint/manage-site-creation)
+
+#### Options at a Glance
+
+1) Stay With Subsites (Status Quo)
+- Pros: Minimal short-term change; familiar structure.
+- Cons:
+  - Higher risk from inherited permissions and mixed security scopes.
+  - Harder to isolate, secure, archive, or move content independently.
+  - Weaker fit with Teams/M365 features and future enhancements.
+  - Greater admin overhead and complexity during audits and org changes.
+- Business impact: Short-term convenience, long-term drag on agility, compliance, and cost.
+
+2) Move to Site Collections (Recommended)
+- Pros:
+  - Clear security boundaries; straightforward access reviews and lifecycle.
+  - Scalable and adaptable; simpler reorganizations and site moves.
+  - Stronger integration with Teams and modern SharePoint capabilities.
+  - Aligned with Microsoft roadmap; reduces future rework and risk.
+- Cons: One-time restructuring effort (covered by our existing plan).
+
+Conclusion: Site collections deliver lower long-term risk and cost, with better user experience and platform alignment.
+
+#### What the Target Model Looks Like
+- One site per business area, program, or project—no deep nesting.
+- Sites connected using hub sites (e.g., Corporate, Operations, Customer, Delivery) for shared navigation, branding, search scope, and news.
+- Group-connected team sites for collaboration; communication sites for broad publishing.
+- Standard templates ensure consistent libraries, metadata, and policies across sites.
+
+#### Governance, Security, and Compliance Advantages
+- Permissions: Clear Owners/Members/Visitors at the site boundary; fewer unique item-level permissions.
+- Lifecycle: Sites can be archived or retired cleanly when initiatives end—no entanglement with parent sites.
+- Compliance: Sensitivity labels, retention, and DLP apply predictably; easier to evidence during audits.
+- Accountability: Named site owners responsible for access, content quality, and lifecycle.
+
+#### Costs and Risks (and Why They’re Acceptable)
+- Costs: Primarily one-time restructuring and communications. Ongoing savings from reduced admin effort, cleaner governance, and fewer support issues.
+- Risks: Managed through standard migration practices, owner validation, and communication. The flat model reduces future change risk and rework.
+
+#### Success Metrics for Management Oversight
+- Governance: % of sites with named owners; completion rate of access reviews.
+- Security/Compliance: Reduction in unique item-level permissions; % of sites with appropriate sensitivity/retention.
+- Adoption/UX: Increased use of hub navigation; improvements in content findability and time-to-document metrics.
+- Efficiency: Fewer permission-related tickets; faster turnaround for org changes affecting sites.
+
+#### FAQs for Non-Technical Stakeholders
+- Will people’s daily work change?
+  - Navigation becomes more consistent; access is easier to manage. Teams users will see a clearer alignment between Teams and SharePoint.
+- Is our content safe during the shift?
+  - Yes—standard Microsoft-backed tooling and owner validation minimize risk. Sensitive areas get priority handling.
+- What if our org structure changes again?
+  - Independent sites can be re-associated to different hubs or archived without disrupting other areas.
+
+#### Recommendation
+Adopt site collections connected by hub sites as our standard in SharePoint Online and move away from deep subsite structures. This aligns with Microsoft best practice and delivers lower risk, lower cost, and a better employee experience.
+
+Decision requested: Approve the site-collection-first standard and endorse execution of the existing plan.
+
+### Validation
+This version removes implementation details, focuses on the “why,” and aligns with Microsoft guidance and business outcomes. If you’d like, I can tailor the paper with your org’s examples and add a one-page executive summary slide for leadership.
