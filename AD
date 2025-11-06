@@ -1,0 +1,58 @@
+# SharePoint 2019 - Get AD Group for User Profile Import
+# Run this in SharePoint Management Shell as Farm Administrator
+
+Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue
+
+Write-Host "Retrieving User Profile Service Application Configuration..." -ForegroundColor Cyan
+
+# Get the User Profile Service Application
+$upsa = Get-SPServiceApplication | Where-Object {$_.TypeName -eq "User Profile Service Application"}
+
+if ($upsa -eq $null) {
+    Write-Host "No User Profile Service Application found!" -ForegroundColor Red
+    exit
+}
+
+Write-Host "`nUser Profile Service Application: $($upsa.DisplayName)" -ForegroundColor Green
+
+# Get the User Profile Application Proxy
+$upsaProxy = Get-SPServiceApplicationProxy | Where-Object {$_.TypeName -eq "User Profile Service Application Proxy"}
+
+# Get User Profile Manager
+$context = [Microsoft.Office.Server.ServerContext]::GetContext($upsa.ServiceApplicationProxyGroup, [Microsoft.SharePoint.SPServiceContext]::Current)
+$upm = New-Object Microsoft.Office.Server.UserProfiles.UserProfileConfigManager($context)
+
+# Get synchronization connections
+Write-Host "`n=== Active Directory Synchronization Connections ===" -ForegroundColor Yellow
+
+if ($upm.ConnectionManager.Count -eq 0) {
+    Write-Host "No synchronization connections configured." -ForegroundColor Red
+} else {
+    foreach ($connection in $upm.ConnectionManager) {
+        Write-Host "`nConnection Name: $($connection.DisplayName)" -ForegroundColor Cyan
+        Write-Host "Server: $($connection.Server)"
+        Write-Host "Type: $($connection.Type)"
+        Write-Host "Account Domain: $($connection.AccountDomain)"
+        Write-Host "Account Username: $($connection.AccountUsername)"
+        Write-Host "Naming Context: $($connection.NamingContext)"
+        
+        # Get container/OU information
+        Write-Host "`n--- Containers/OUs Being Synchronized ---" -ForegroundColor Green
+        
+        foreach ($container in $connection.PropertyMapping.Item("Container")) {
+            Write-Host "Container: $container"
+        }
+        
+        # Get filter information (this shows the AD group filter if configured)
+        Write-Host "`n--- Filter Settings ---" -ForegroundColor Green
+        Write-Host "Filter: $($connection.Filter)"
+        
+        # Additional connection details
+        Write-Host "`n--- Additional Details ---" -ForegroundColor Green
+        Write-Host "Use SSL: $($connection.UseSSL)"
+        Write-Host "Use Disabled Filter: $($connection.UseDisabledFilter)"
+        Write-Host "Connection String: $($connection.ConnectionString)"
+    }
+}
+
+Write-Host "`n=== Script Complete ===" -ForegroundColor Cyan
