@@ -1,0 +1,30 @@
+Reduced Operational Overhead
+On‑prem: IT team spends hours each month applying SharePoint CU patches, Windows updates, and firmware updates on SQL + front‑end servers, plus monitoring backups and storage.
+Online: Microsoft handles patches, backups, and capacity; IT only manages site collections, permissions, and governance via the admin center, freeing infra staff for higher‑value work.
+Greatly Enhanced Security & Compliance
+On‑prem: Data is protected mainly by AD permissions and local firewall; implementing DLP, sensitivity labels, or customer‑key encryption requires extra products and complex setup.
+Online: SharePoint Online automatically integrates with M365 Purview—DLP policies, sensitivity labels, audit logs, and retention policies apply centrally, and files are protected even when downloaded or shared externally.
+Scalability & Reliability
+On‑prem: When a business unit launches a new portal and usage spikes, IT must buy and configure extra SharePoint and SQL servers; until then, users see slow page loads.
+Online: Storage and compute scale elastically in the tenant; the new portal can handle sudden peaks (e.g., company‑wide campaign) without any hardware changes, backed by Microsoft’s 99.9% SLA.
+Simplified IT Management
+On‑prem: Creating a new web app or farm for a project involves coordinating DNS, load balancers, OS images, certificates, and service accounts.
+Online: Admin creates a new site collection or hub site in minutes from the SharePoint admin center or PowerShell, with no infrastructure configuration required.
+Modern Employee Experience
+On‑prem: Classic pages, limited responsive design; employees often avoid the portal on mobile and fall back to email attachments or network drives.
+Online: Modern SharePoint sites with responsive pages, Viva Connections, and integration into Teams provide a single, attractive intranet that employees can use from any device.
+Realtime Collaboration & Mobility
+On‑prem: Two users opening the same Word document from a mapped drive/SharePoint library often cause “read‑only” or save conflicts; mobile access requires VPN and reverse proxies.
+Online: Word/Excel/PowerPoint in SharePoint Online support real‑time co‑authoring in the browser or desktop apps, users see each other’s cursors, and can edit from anywhere with just internet + sign‑in (no VPN).
+Unified Collaboration Hub
+On‑prem: SharePoint, Skype for Business, and file shares are separate; project teams juggle multiple tools and links to keep documents and conversations aligned.
+Online: SharePoint Online sites back Microsoft Teams channels; each Team has a SharePoint document library, Planner plan, OneNote, and shared calendar, giving one hub for chat, documents, and tasks.
+Improved Productivity & Efficiency
+On‑prem: Request workflows (e.g., access requests, leave approvals) use old SharePoint Designer workflows that are fragile and hard to change; business waits on IT to modify them.
+Online: Lists and libraries integrate with Power Automate—business owners can create/modify approval flows themselves (e.g., new document triggers Manager + HR approval) without needing farm‑level deployment.
+Data‑Driven Insights (Power BI)
+On‑prem: Reporting against SharePoint content requires SSRS/Excel Services or separate data warehouses; publishing and sharing dashboards is cumbersome and often limited to VPN users.
+Online: Power BI can directly connect to SharePoint Online lists and libraries; dashboards showing document usage, requests, or project status can be published to workspaces and securely shared with any M365 user.
+Innovation & Future‑Proofing
+On‑prem: New features (e.g., Loop components, Copilot integration, modern web parts) are unavailable or require costly major upgrades to the next SharePoint version.
+Online: SharePoint Online receives continuous feature releases (e.g., Copilot in SharePoint, new web parts, improved search) automatically, so the environment stays current without disruptive migration projects.
