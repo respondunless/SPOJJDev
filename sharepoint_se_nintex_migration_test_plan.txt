@@ -1,0 +1,497 @@
+SharePoint SE + Nintex SE Migration Test Plan
+Mid-Level Runbook / Plain Text Guide
+
+Purpose
+-------
+
+This guide describes a staged test approach for migrating SharePoint Server 2019 on-prem content databases to SharePoint Server Subscription Edition (SE), where Nintex is also used on the old and new farms.
+
+The goal is to separate the migration into two clear test phases:
+
+1. A SharePoint-only content database attach/upgrade test.
+2. A proper SharePoint + Nintex paired migration test.
+
+The first test proves that SharePoint sites come across and open in SE.
+The second test proves that Nintex workflows, forms, history, and running workflow state can be migrated safely.
+
+Important Principle
+-------------------
+
+SharePoint content databases and Nintex databases should be treated as related application data.
+
+For a simple SharePoint-only test, it is acceptable to mount only the SharePoint content databases and ignore Nintex.
+
+For any real Nintex validation, the matching SharePoint content database and Nintex databases should come from the same controlled backup point.
+
+Recommended Overall Approach
+----------------------------
+
+Phase 1:
+Run a SharePoint-only database attach/upgrade test.
+
+Phase 2:
+Throw away the Phase 1 test databases unless there is a strong reason to keep them.
+
+Phase 3:
+Run a clean SharePoint + Nintex paired migration test using fresh, matching backups.
+
+Phase 4:
+Perform a final full dress rehearsal before production cutover.
+
+Phase 5:
+Only after successful testing, plan the production migration window.
+
+
+============================================================
+PHASE 1 - SHAREPOINT-ONLY CONTENT DATABASE TEST
+============================================================
+
+Purpose
+-------
+
+This phase proves to the business and technical team that the SharePoint sites can be restored, mounted, upgraded, and opened in SharePoint SE.
+
+This phase does not prove that Nintex works.
+
+Expected Outcome
+----------------
+
+The migrated sites should open in SharePoint SE.
+
+Users/testers should be able to confirm:
+
+- Site collections are accessible.
+- Home pages load.
+- Document libraries open.
+- Lists open.
+- Pages render.
+- Permissions appear broadly correct.
+- Navigation works.
+- Documents can be opened.
+- Basic SharePoint functionality is intact.
+
+Nintex workflows, Nintex Forms, workflow history, workflow status pages, and running workflow instances are not validated in this phase.
+
+Preconditions
+-------------
+
+- SharePoint SE farm is installed and patched.
+- SharePoint SE web applications are created.
+- Managed paths are configured.
+- Authentication is configured.
+- DNS / host names / alternate access mappings are planned.
+- Nintex SE is installed on the new farm, but it does not need to be connected to migrated Nintex databases for this phase.
+- Test SQL databases are restored from copies of production SharePoint content databases.
+
+High-Level Steps
+----------------
+
+1. Select the SharePoint content databases to test.
+
+   Use either:
+   - one pilot content database first, or
+   - all content databases if the goal is to prove all 30 sites come across.
+
+2. Restore copies of the SharePoint content databases to the SE SQL environment.
+
+   Use test database names where possible so there is no confusion with production.
+
+3. Mount the SharePoint content databases to the correct SharePoint SE web application.
+
+4. Allow SharePoint to perform the required database/schema upgrade.
+
+5. Review SharePoint upgrade status and upgrade logs.
+
+6. Open each migrated site collection.
+
+7. Perform basic SharePoint validation.
+
+8. Record issues by site.
+
+9. Clearly label this test result as:
+
+   "SharePoint content database attach/upgrade test only.
+   Nintex workflows and forms were not validated."
+
+10. Decide whether to keep or discard this test environment.
+
+Recommendation
+--------------
+
+Treat this first test as disposable.
+
+Do not use this as the final Nintex validation baseline unless it was created using the exact same controlled database snapshot strategy required for the Nintex migration test.
+
+Risks / Expected Issues
+-----------------------
+
+During this phase, Nintex-related components may not work correctly.
+
+Expected Nintex issues may include:
+
+- Nintex forms not rendering.
+- Workflow status pages failing.
+- Workflow history missing or disconnected.
+- Workflow designer errors.
+- Running workflows not continuing.
+- Workflow tasks existing as SharePoint items but not behaving correctly.
+
+These are expected and should not be treated as Phase 1 failures.
+
+
+============================================================
+PHASE 2 - CLEAN SHAREPOINT + NINTEX PAIRED MIGRATION TEST
+============================================================
+
+Purpose
+-------
+
+This phase proves that SharePoint content and Nintex data can be migrated together.
+
+This is the real technical migration test for Nintex.
+
+Expected Outcome
+----------------
+
+The migrated sites should open in SharePoint SE, and Nintex should function correctly.
+
+Validation should include:
+
+- Existing Nintex workflows are visible.
+- Existing Nintex forms open.
+- Workflow history is visible.
+- Existing workflow tasks are visible.
+- New workflow instances can start.
+- In-progress workflow instances can resume where applicable.
+- Scheduled or auto-start workflows behave correctly.
+- Nintex database mappings are correct.
+- External workflow actions still work.
+
+Preconditions
+-------------
+
+- SharePoint SE farm is installed and working.
+- Nintex SE is installed on the new farm.
+- Nintex licensing is sorted for the new SE environment.
+- Destination SharePoint web applications exist.
+- The SharePoint-only test has already proven that sites can mount.
+- A pilot site/content database has been selected for the Nintex test.
+- Matching SharePoint and Nintex databases can be backed up from the same controlled source window.
+
+Important Rule
+--------------
+
+For this phase, do not mix database copies from different points in time.
+
+Avoid this:
+
+- SharePoint content database backup from 10:00 AM.
+- Nintex Workflow database backup from 2:00 PM.
+
+Preferred approach:
+
+- Freeze or quiet workflow activity.
+- Take SharePoint and Nintex backups from the same controlled migration window.
+
+High-Level Source Farm Steps
+----------------------------
+
+1. Identify the SharePoint content database being tested.
+
+2. Identify the matching Nintex Workflow content database.
+
+3. Identify the relevant Nintex configuration database and Nintex Forms database if used.
+
+4. Record the database mapping before migration.
+
+5. Identify sample workflows for validation:
+
+   - one completed workflow
+   - one in-progress workflow
+   - one new workflow to start after migration
+   - one form-enabled list or library
+   - one auto-start workflow if applicable
+   - one workflow with external actions if applicable
+
+6. Notify testers/business owners that a migration test snapshot is being taken.
+
+7. Freeze or reduce workflow activity where practical.
+
+8. Stop or pause workflow/timer activity as required for a consistent migration snapshot.
+
+9. Run the Nintex detach process for the relevant Nintex Workflow content database.
+
+10. Back up the SharePoint content database.
+
+11. Back up the matching Nintex Workflow database.
+
+12. Back up the Nintex configuration database if required for the migration strategy.
+
+13. Back up the Nintex Forms database if used.
+
+14. Resume source farm activity if this is only a test and production must continue running.
+
+High-Level Destination Farm Steps
+---------------------------------
+
+1. Restore the SharePoint content database copy to the SE SQL environment.
+
+2. Restore the matching Nintex Workflow database copy to the SE SQL environment.
+
+3. Restore the Nintex Forms database copy if used.
+
+4. Confirm Nintex SE is installed and available in Central Administration.
+
+5. Mount the SharePoint content database to the correct SharePoint SE web application.
+
+6. Allow SharePoint to complete the content database upgrade.
+
+7. Attach the matching Nintex Workflow content database using the Nintex supported method.
+
+8. Connect/configure the Nintex Forms database if used.
+
+9. Confirm Nintex database mappings.
+
+10. Confirm Nintex features are active on the required web applications/site collections.
+
+11. Restart services or run IIS reset only where required by the Nintex/SharePoint procedure.
+
+12. Re-enable workflow/timer activity when ready for validation.
+
+Validation Steps
+----------------
+
+Validate SharePoint first:
+
+- Site opens.
+- Pages load.
+- Lists/libraries open.
+- Permissions look correct.
+- Documents open.
+
+Validate Nintex Forms:
+
+- New form opens.
+- Edit form opens.
+- Display form opens.
+- Form can be submitted.
+- People picker fields work.
+- Lookup fields work.
+- Repeating sections work if used.
+- Custom JavaScript/CSS works if used.
+
+Validate completed workflows:
+
+- Workflow status is visible.
+- Workflow history is visible.
+- Workflow tasks/history show correctly.
+- The old completed result is still understandable.
+
+Validate new workflow instances:
+
+- Start a new workflow.
+- Confirm it enters running state.
+- Confirm tasks/emails/actions are created.
+- Complete the workflow.
+- Confirm final status and history.
+
+Validate in-progress workflows:
+
+- Open a workflow that was in progress at the time of migration.
+- Confirm it still shows as in progress.
+- Complete the pending action, such as approving a task.
+- Confirm the workflow continues.
+- Confirm it reaches the expected next step or completes.
+
+Validate auto-start workflows:
+
+- Create a test item.
+- Modify a test item.
+- Confirm only expected workflows start.
+- Confirm there are no duplicate or old-farm references.
+
+Validate external dependencies:
+
+- Email actions.
+- Web service calls.
+- SQL actions.
+- Document generation.
+- AD/user lookups.
+- External connector actions.
+- Workflow constants.
+- Service accounts.
+- Stored credentials.
+
+Pass / Fail Criteria
+--------------------
+
+Phase 2 should only be considered successful if:
+
+- SharePoint sites open correctly.
+- Nintex forms open and submit.
+- Existing workflow history is accessible.
+- New workflows can start and complete.
+- At least one in-progress workflow can resume successfully.
+- Critical external workflow actions are tested.
+- Nintex database mappings are correct.
+- No old server names or URLs are causing functional issues.
+
+
+============================================================
+PHASE 3 - FULL DRESS REHEARSAL
+============================================================
+
+Purpose
+-------
+
+This phase proves the end-to-end migration approach using the same sequence that would be used in production.
+
+Expected Outcome
+----------------
+
+A complete migration runbook with timings, issues, fixes, and rollback notes.
+
+High-Level Steps
+----------------
+
+1. Select all databases in migration scope.
+
+2. Confirm SharePoint-to-Nintex database mappings.
+
+3. Confirm downtime/change window requirements.
+
+4. Run the full migration sequence using copies of production databases.
+
+5. Time each major step:
+
+   - database backup
+   - database restore
+   - SharePoint mount/upgrade
+   - Nintex attach
+   - Forms connection
+   - validation
+
+6. Record every command or admin action used.
+
+7. Record every error and fix.
+
+8. Run business validation.
+
+9. Confirm rollback process.
+
+10. Produce final production cutover checklist.
+
+
+============================================================
+PHASE 4 - PRODUCTION CUTOVER
+============================================================
+
+Purpose
+-------
+
+This phase performs the real production migration.
+
+Only perform this after successful SharePoint-only testing, paired Nintex testing, and a full dress rehearsal.
+
+High-Level Production Sequence
+------------------------------
+
+1. Confirm change approval.
+
+2. Confirm business communication has been sent.
+
+3. Confirm final backup and rollback plan.
+
+4. Freeze user changes.
+
+5. Stop or pause workflow/timer activity as required.
+
+6. Run Nintex detach process on the source Nintex Workflow content databases.
+
+7. Back up SharePoint content databases.
+
+8. Back up Nintex Workflow databases.
+
+9. Back up Nintex Forms databases.
+
+10. Restore databases to destination SQL environment.
+
+11. Mount SharePoint content databases in SharePoint SE.
+
+12. Allow SharePoint database upgrades to complete.
+
+13. Attach Nintex Workflow databases using the Nintex supported method.
+
+14. Connect Nintex Forms databases.
+
+15. Confirm database mappings.
+
+16. Activate/confirm required Nintex features.
+
+17. Re-enable services/timer jobs/workflow activity.
+
+18. Run technical validation.
+
+19. Run business validation.
+
+20. Release the system to users.
+
+21. Keep the old farm available in a safe rollback/read-only state until the agreed rollback window expires.
+
+
+============================================================
+RECOMMENDED COMMUNICATION TO BUSINESS
+============================================================
+
+For SharePoint-Only Test
+------------------------
+
+"This test is intended to prove that the SharePoint sites can be migrated and opened in SharePoint SE. It does not validate Nintex workflows, Nintex Forms, workflow history, or running workflow state. Nintex will be tested separately in a later paired migration test."
+
+For Nintex Paired Test
+----------------------
+
+"This test validates the full SharePoint and Nintex migration path, including SharePoint content, Nintex workflows, forms, workflow history, and selected running workflow scenarios."
+
+For Production Cutover
+----------------------
+
+"The production cutover will migrate SharePoint content databases and their matching Nintex databases together from the same controlled migration window. Workflow activity will be paused during the final backup and migration period to reduce risk of inconsistent workflow state."
+
+
+============================================================
+KEY DECISIONS TO RECORD
+============================================================
+
+- Which SharePoint content databases are in scope?
+- Which site collections are in each content database?
+- Which Nintex Workflow content database maps to each SharePoint content database?
+- Is Nintex Forms in use?
+- Which Nintex Forms database is in scope?
+- Are there any workflows currently in progress?
+- Are there any long-running workflows?
+- Are there scheduled workflows?
+- Are there workflows using external systems?
+- Are there workflow constants or stored credentials that need review?
+- Will the SharePoint-only test database be discarded?
+- What is the rollback plan?
+- What is the final outage window?
+- Who signs off SharePoint validation?
+- Who signs off Nintex validation?
+
+
+============================================================
+BOTTOM LINE
+============================================================
+
+The safe migration approach is:
+
+1. Do a SharePoint-only content database attach/upgrade test first.
+2. Clearly state that Nintex is not being validated in that test.
+3. Treat the first SharePoint-only test as disposable unless it was tightly controlled.
+4. For real Nintex testing, start again with fresh matching SharePoint and Nintex database backups.
+5. Mount SharePoint content databases first.
+6. Attach the matching Nintex Workflow databases second.
+7. Connect Nintex Forms databases if used.
+8. Validate forms, history, new workflows, and in-progress workflows.
+9. Only then prepare the production cutover plan.
