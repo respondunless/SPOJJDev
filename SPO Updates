@@ -1,13 +1,22 @@
 Hi All,
 
-As you know, the SharePoint Online migration waves are now well underway, and we are continuing to make good progress.
+I wanted to provide a further update on the SharePoint Subscription Edition work.
 
-Since the previous update, we have successfully migrated another 6 sites across to SharePoint Online. Overall, the migration process continues to run smoothly, and while we have encountered a few small items along the way, nothing has come up that we have not been able to work through.
+We are now in a position where we can start planning the hands-on UAT process and discuss how this will work with the relevant teams.
 
-We are also continuing to progress the planning for the upcoming migration waves and will keep working closely with the relevant teams as we move through the next stages.
+There are still some final items we are working through, and we will continue to complete our own checks and testing in parallel. However, we are now ready to schedule a meeting to walk through the proposed UAT approach, what areas will need to be tested, how feedback will be captured, and the expected next steps.
 
-Regarding SharePoint Subscription Edition, we are now getting close to being ready for hands-on UAT testing. There is still some additional configuration, validation, and internal testing to complete first, but we are progressing well and are moving closer to the point where user testing can begin.
+The purpose of the meeting will be to make sure everyone has a clear understanding of the UAT process before testing begins, including:
 
-Once we are ready to start UAT, we will schedule a meeting to walk through the testing approach, expectations, and next steps in more detail.
+* what will be available for testing
+* who needs to be involved
+* how issues or feedback should be reported
+* expected timeframes
+* any access or support requirements
 
-Sites successfully migrated so far:
+Once we have agreed on the approach, we can then move forward with scheduling the actual UAT testing activities.
+
+Please let me know your availability, and we can organise a suitable time to meet and discuss the UAT plan in more detail.
+
+Kind regards,
+Joel
