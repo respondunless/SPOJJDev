@@ -1,36 +1,9 @@
+UAT Feedback & Sign-Off
 
-1. **Check site navigation**
-
-   * Confirm menus, links, quick launch items, top navigation, promoted links, and landing pages look and behave the same as Production.
-
-2. **Check key pages and content**
-
-   * Open the pages your team normally uses and confirm the layout, text, images, web parts, embedded content, and links appear correctly.
-
-3. **Check document libraries**
-
-   * Open commonly used document libraries and confirm folders, documents, views, metadata columns, filters, sorting, and permissions appear as expected.
-
-4. **Check lists and forms**
-
-   * Review key SharePoint lists and confirm items, views, columns, lookup fields, attachments, and list forms open correctly.
-
-5. **Check images, files, and links**
-
-   * Confirm images load properly, documents open/download correctly, and internal SharePoint links still point to the correct locations.
-
-6. **Check Nintex workflows are present**
-
-   * Confirm expected Nintex workflows are visible on the correct lists/libraries, can be opened/viewed, and appear to have migrated correctly.
-
-7. **Check normal user access and permissions**
-
-   * Confirm users can access the same sites, pages, lists, libraries, and content they can access in Production, and that restricted areas remain restricted.
-
-You can also add this note underneath:
-
-**Important UAT note:**
-This environment is for validation only. Please do not make development changes, redesign pages, rebuild workflows, or treat this as final content. The database will be refreshed again from Production at the time of migration.
-
-**Email / workflow note:**
-Nintex is attached for validation, but workflow emails are not enabled during UAT because this would duplicate Production behaviour and may send test or duplicate notifications to real users.
+Please complete testing using the agreed UAT checklist.
+Send feedback by email only, so issues are captured in one place.
+Keep feedback short and specific: site/page, issue, expected result, screenshot if useful.
+Do not request new development or design changes during UAT.
+This environment will be refreshed from Production at migration.
+Once testing is complete, email confirmation that your area has been tested.
+Your email confirmation will be treated as UAT sign-off.
