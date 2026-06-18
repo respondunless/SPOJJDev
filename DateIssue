@@ -6,3 +6,8 @@ https://YOUR-SITE-URL/_api/web/lists/getbytitle('Documents')/fields/getbyinterna
 
 
 https://YOUR-SITE-URL/_api/web/lists/getbytitle('Documents')/fields/getbyinternalnameortitle('Modified')?$select=InternalName,Title,TypeAsString,DisplayFormat,FriendlyDisplayFormat
+
+
+
+
+So this is not server time, not SQL, not the Created value, not locale, and not the basic field setting. It is now firmly in the view/rendering layer.
