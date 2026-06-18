@@ -1,1 +1,8 @@
 https://YOUR-SITE-URL/_api/web/lists/getbytitle('Documents')/items?$select=Id,FileLeafRef,Created,Modified&$orderby=Id desc&$top=1
+
+
+
+https://YOUR-SITE-URL/_api/web/lists/getbytitle('Documents')/fields/getbyinternalnameortitle('Created')?$select=InternalName,Title,TypeAsString,DisplayFormat,FriendlyDisplayFormat
+
+
+https://YOUR-SITE-URL/_api/web/lists/getbytitle('Documents')/fields/getbyinternalnameortitle('Modified')?$select=InternalName,Title,TypeAsString,DisplayFormat,FriendlyDisplayFormat
