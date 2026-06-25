@@ -1,21 +1,51 @@
-## High-Level Migration Overview
+## High-Level Migration and Cutover Overview
 
-On Friday evening, after the agreed cut-off time, we will place the relevant databases into a read-only state and make the SharePoint sites unavailable by stopping the required services. This ensures that no further user changes can be made once the migration window begins.
+On Friday evening, after the agreed cut-off time, we will place the relevant databases into a read-only state and make the SharePoint sites unavailable by stopping the required services. This will ensure that no further user changes can be made once the migration window begins.
 
-Once the environment is locked down, we will take the final copy of the required SharePoint content databases. These databases will then be copied to the new environment, mounted, and upgraded to SharePoint Subscription Edition.
+Once the environment is locked down, we will take the final copy of the required SharePoint content databases. These databases will then be copied to the new SharePoint Subscription Edition environment, mounted, and upgraded.
 
-After the upgrade is complete, we will start the required SharePoint services and perform initial validation to confirm that the sites are loading correctly and that the upgraded content is being served as expected.
+After the databases have been mounted and upgraded, the required SharePoint services will be started and initial validation will be completed. This will include checking that the sites load correctly, that the content is available, and that the upgraded environment is serving the expected SharePoint web applications.
 
-We will then repeat the same process for the Nintex database. The Nintex database will be attached and validated, but the Nintex email service will remain disabled until all required checks have been completed. This is to prevent any unintended workflow emails from being sent during validation.
+## Web Application Reconfiguration
 
-As part of the cutover, some web application reconfiguration will also be required so that the new SharePoint Subscription Edition environment can be made available using the same URL as the existing SharePoint environment.
+As part of the cutover, the new SharePoint Subscription Edition environment will need to be configured to use the same URL as the old SharePoint environment.
 
-We will also need to confirm that a new SPN is configured for the new SharePoint server so that authentication works correctly for the new web application using the existing SharePoint URL.
+This will require web application reconfiguration in SharePoint and supporting changes outside SharePoint. At a high level, this may include:
+
+* Creating or updating the SharePoint web application in the new farm so that it is configured for the existing production URL.
+* Confirming the correct host header is assigned to the web application.
+* Confirming Alternate Access Mappings are configured correctly so the public URL matches the old SharePoint URL.
+* Confirming the IIS bindings are correct on the new SharePoint server, including host name, port, and certificate if HTTPS is used.
+* Confirming the correct service account is used by the web application application pool.
+* Updating DNS, load balancer, or reverse proxy configuration as required so the existing SharePoint URL resolves to the new SharePoint Subscription Edition environment instead of the old farm.
+* Ensuring the old farm is no longer serving the same URL at the time of cutover to avoid conflicts.
+
+This step is important because the goal is for users to continue accessing SharePoint using the existing URL, while the backend is moved to the new SharePoint Subscription Edition farm.
+
+## SPN and Authentication
+
+We will also need to ensure that a new SPN is configured for the new SharePoint server and/or service account so that authentication works correctly when the new web application uses the old SharePoint URL.
+
+This will need to match the final authentication design for the web application. For example, if Kerberos is used, the HTTP SPN for the existing SharePoint URL will need to be registered against the correct service account used by the new SharePoint web application.
+
+This should be validated as part of cutover testing, as an incorrect or missing SPN could result in authentication issues even if the site itself is otherwise running correctly.
+
+## Nintex Database Migration
+
+For Nintex, we are not planning to move the full old Nintex configuration as-is. The new environment will have new Nintex configuration databases for both Nintex Forms and Nintex Workflow.
+
+The main Nintex database we intend to move is the Nintex content database. This is expected to bring across the important operational content associated with Nintex, such as workflow history and related runtime information, while allowing the new environment to use clean configuration databases.
+
+The Nintex content database will be copied, attached, and validated in the new environment after the SharePoint content databases have been upgraded and the farm is stable.
+
+The Nintex email service should remain disabled until all checks have been completed. This is to avoid any unintended workflow emails or notifications being sent during validation. Once the Nintex databases and services have been checked, email functionality can be reviewed and enabled only when we are confident the environment is behaving correctly.
+
+Further validation will be required to confirm that Nintex Forms, workflows, workflow history, and any related content are available and working as expected in the upgraded environment.
 
 ## Access to the Old SharePoint Farm
 
 One point that should be discussed is whether access to the old SharePoint farm is required after the upgrade.
 
-The US team has advised that they do not provide access to the old SharePoint farm after an upgrade, and this was not offered as part of their upgrade approach. Based on that, we may need to consider whether maintaining access to the old farm is necessary, or whether it introduces additional complexity that we should avoid.
+The US team has advised that they do not provide access to the old SharePoint farm after an upgrade, and this was not offered as part of their upgrade approach. Based on that, we may need to consider whether maintaining access to the old farm is actually required, or whether it introduces additional complexity that we should avoid.
 
 This should be left open for discussion before the final cutover approach is agreed.
