@@ -1,9 +1,0 @@
-SharePoint will be upgraded from SharePoint 2019 to SharePoint Subscription Edition over the weekend.
-The existing SharePoint URL will remain the same, and we do not expect any major changes for users once the upgrade is complete.
-SharePoint may be unavailable or intermittently available during the weekend while the cutover work is completed.
-SharePoint is expected to be available again by Monday morning.
-SharePoint Online will remain available during the weekend. However, links from the on-premise SharePoint portal to SharePoint Online sites may not be available while the portal itself is down.
-On Monday morning, users should close and reopen their browser, or restart their PC, before accessing SharePoint. This will help clear any old sessions and allow a clean login.
-If users experience issues on Monday, they should first try closing all browser windows and reopening SharePoint.
-If the issue continues, users should try a hard refresh of the page before logging a support ticket.
-Any issues that remain after restarting the browser or PC should be logged through the normal support process.
