@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <rules>
 
+  <rule name="Do not redirect SharePoint paths" enabled="true" stopProcessing="true">
+    <match url="^(sites|SitePages|_layouts|_api|_vti_bin)(/.*)?$" ignoreCase="true" />
+    <action type="None" />
+  </rule>
+
   <rule name="Redirect root only" enabled="true" stopProcessing="true">
-    <match url=".*" />
+    <match url="^$" />
     <conditions logicalGrouping="MatchAll" trackAllCaptures="false">
       <add input="{HTTP_HOST}" pattern="^ngau-portal-stg\.au\.myngc\.com$" />
-      <add input="{REQUEST_URI}" pattern="^/(?:\?.*)?$" />
     </conditions>
     <action type="Redirect"
             url="https://ngapac.sharepoint.com/"
@@ -14,6 +18,3 @@
   </rule>
 
 </rules>
-
-
-
