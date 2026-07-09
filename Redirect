@@ -1,0 +1,7 @@
+<rule name="Redirect root only" enabled="true" stopProcessing="true">
+  <match url="^$" />
+  <conditions logicalGrouping="MatchAll">
+    <add input="{HTTP_HOST}" pattern="^ngau-portal-stg\.au\.myngc\.com$" />
+  </conditions>
+  <action type="Redirect" url="https://ngapac.sharepoint.com/" redirectType="Found" />
+</rule>
