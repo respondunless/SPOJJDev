@@ -1,26 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <rules>
 
-  <rule name="Add Trailing Slash if not file reference" enabled="true" stopProcessing="false">
-    <match url=".*[^/]$" />
-    <conditions logicalGrouping="MatchAll" trackAllCaptures="false">
-      <add input="{URL}" pattern="^/sites(/|$)" negate="true" />
-      <add input="{URL}" pattern="^/_api(/|$)" negate="true" />
-      <add input="{URL}" pattern="^/_vti_bin(/|$)" negate="true" />
-      <add input="{URL}" pattern="^/_layouts(/|$)" negate="true" />
-      <add input="{REQUEST_FILENAME}" pattern=".+?\.\w+$" negate="true" />
-      <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
-      <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
-    </conditions>
-    <action type="Redirect" url="{R:0}/" redirectType="Temporary" />
-  </rule>
-
   <rule name="Redirect root only" enabled="true" stopProcessing="true">
-    <match url="^$" />
+    <match url=".*" />
     <conditions logicalGrouping="MatchAll" trackAllCaptures="false">
       <add input="{HTTP_HOST}" pattern="^ngau-portal-stg\.au\.myngc\.com$" />
+      <add input="{REQUEST_URI}" pattern="^/(?:\?.*)?$" />
     </conditions>
-    <action type="Redirect" url="https://ngapac.sharepoint.com/" redirectType="Temporary" />
+    <action type="Redirect"
+            url="https://ngapac.sharepoint.com/"
+            appendQueryString="false"
+            redirectType="Found" />
   </rule>
 
 </rules>
