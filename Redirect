@@ -4,14 +4,15 @@
   <rule name="Add Trailing Slash if not file reference" enabled="true" stopProcessing="false">
     <match url=".*[^/]$" />
     <conditions logicalGrouping="MatchAll" trackAllCaptures="false">
+      <add input="{URL}" pattern="^/sites(/|$)" negate="true" />
+      <add input="{URL}" pattern="^/_api(/|$)" negate="true" />
+      <add input="{URL}" pattern="^/_vti_bin(/|$)" negate="true" />
+      <add input="{URL}" pattern="^/_layouts(/|$)" negate="true" />
       <add input="{REQUEST_FILENAME}" pattern=".+?\.\w+$" negate="true" />
       <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
       <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
-      <add input="{PATH_INFO}" pattern="_api/*" negate="true" />
-      <add input="{PATH_INFO}" pattern="_vti_bin/*" negate="true" />
-      <add input="{PATH_INFO}" pattern="_layouts/*" negate="true" />
     </conditions>
-    <action type="Redirect" url="{R:0}/" />
+    <action type="Redirect" url="{R:0}/" redirectType="Temporary" />
   </rule>
 
   <rule name="Redirect root only" enabled="true" stopProcessing="true">
