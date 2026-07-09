@@ -18,3 +18,8 @@
   </rule>
 
 </rules>
+
+
+
+The original setup was redirecting too broadly because the rule matched **everything** with `url=".*"` and then captured the full path using `PATH_INFO` / `{C:1}`, so IIS treated `/sites/anysite`, `/SitePages/Home.aspx`, and other SharePoint paths as valid redirect targets and sent them across to `ngapac.sharepoint.com`. We fixed it by replacing that broad rule with a **root-only redirect**: only the bare host/root URL is allowed to redirect, while anything after the slash is left alone so the old SharePoint/IIS paths can still load. The last bit of confusion was browser caching from the earlier redirect behaviour, likely made worse if it had been tested as a permanent redirect, which is why adding `?nocache=12345` proved the server rule was now working correctly.
+
