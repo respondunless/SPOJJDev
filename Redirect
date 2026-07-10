@@ -1,44 +1,5 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<rules>
-
-  <rule name="Do not redirect SharePoint paths" enabled="true" stopProcessing="true">
-    <match url="^(sites|SitePages|_layouts|_api|_vti_bin)(/.*)?$" ignoreCase="true" />
-    <action type="None" />
-  </rule>
-
-  <rule name="Redirect root only" enabled="true" stopProcessing="true">
-    <match url="^$" />
-    <conditions logicalGrouping="MatchAll" trackAllCaptures="false">
-      <add input="{HTTP_HOST}" pattern="^ngau-portal-stg\.au\.myngc\.com$" />
-    </conditions>
-    <action type="Redirect"
-            url="https://ngapac.sharepoint.com/"
-            appendQueryString="false"
-            redirectType="Found" />
-  </rule>
-
-</rules>
-
-PROD BELOW
+The root cause is most likely a form-routing mismatch introduced by SharePoint SE’s modern Document Set implementation. In SharePoint 2019, Document Sets in SharePoint Server were classic UX, so Nintex Forms were reached through the classic content type form path. In SharePoint SE, Document Sets can remain in the Modern document library experience. Modern library actions such as New, Upload, Details pane, Edit properties and Edit all do not all use the same classic form route. Because the affected libraries use multiple content types and Nintex Forms are attached at the content type level, SharePoint must resolve the correct content type and form URL before Nintex can load. In the SE Modern path, that resolution is not behaving the same as the 2019/classic path. Forcing Classic restores the old route and therefore restores the expected Nintex behaviour.
 
 
-<?xml version="1.0" encoding="UTF-8"?>
-<rules>
 
-  <rule name="Do not redirect SharePoint paths" enabled="true" stopProcessing="true">
-    <match url="^(sites|SitePages|_layouts|_api|_vti_bin)(/.*)?$" ignoreCase="true" />
-    <action type="None" />
-  </rule>
-
-  <rule name="Redirect production root only" enabled="true" stopProcessing="true">
-    <match url="^$" />
-    <conditions logicalGrouping="MatchAll" trackAllCaptures="false">
-      <add input="{HTTP_HOST}" pattern="^portal\.au\.myngc\.com$" />
-    </conditions>
-    <action type="Redirect"
-            url="https://ngapac.sharepoint.com/"
-            appendQueryString="false"
-            redirectType="Found" />
-  </rule>
-
-</rules>
+The affected libraries are using a complex combination of SharePoint Document Sets, multiple content types and Nintex Forms. In SharePoint 2019, Document Sets still used classic SharePoint behaviour behind the scenes, which allowed Nintex Forms to open through the older form pages. SharePoint SE changed this by adding modern Document Set support. That means users can now stay in the Modern library experience, but the Modern experience does not always open forms the same way Classic does. As a result, Nintex is not always being called correctly for these libraries. Setting the affected libraries back to Classic restores the older form path and is the safest operational workaround.
