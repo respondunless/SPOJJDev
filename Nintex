@@ -1,0 +1,20 @@
+Team,
+
+I've mentioned this a few times in conversation. Putting it in writing so we've got it on record as we work through the SharePoint SE migration.
+
+Nintex Workflow on-premises runs on the SharePoint 2010 workflow engine. Nintex has stated this directly on their own community: Nintex Workflow uses the Legacy Workflow Engine, and there is no plan to move the on-prem product to the 2013 engine or anything else.
+
+Microsoft has deprecated the SharePoint 2010 workflow engine in SharePoint Server Subscription Edition. Their published position is that it stays supported until 14 July 2026. After that, it's unsupported. Whether it keeps running past that date, or whether Microsoft actively removes it in a future SE feature update, isn't published. Microsoft has moved dates on this before, so the current date isn't a guarantee either way.
+
+What this means for us in plain terms:
+
+- Everything works today, and nothing changes overnight on 14 July 2026.
+- From that date, our Nintex workflows sit on an unsupported Microsoft component, regardless of whether they still execute.
+- Nintex's own successor products (Nintex Automation K2 for self-hosted, Nintex Automation Cloud for cloud) aren't like-for-like replacements. Workflows have to be rebuilt, not migrated.
+
+Nothing here is urgent this week. But it's also not something we should be discovering the week before the deadline. Suggest we start scoping our exit path now — an inventory of what we have, what each workflow is worth, which ones move cleanly to Power Automate, which need a proper rebuild, and which can just be retired — so the plan sits on our roadmap rather than getting forced on us by a Microsoft update.
+
+Happy to pull together a first cut of the inventory and options if that helps.
+
+Thanks,
+Joel
