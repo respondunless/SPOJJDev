@@ -1,0 +1,25 @@
+{
+  "sections": [
+    {
+      "displayname": "Employee details",
+      "fields": [
+        "Name",
+        "MyID",
+        "Position",
+        "Manager",
+        "Program",
+        "Function"
+      ]
+    },
+    {
+      "displayname": "Professionalisation details",
+      "fields": [
+        "Professionalisation Name",
+        "Professional Body",
+        "Cost",
+        "Duration of Professionalisation",
+        "Funding Model Alignment"
+      ]
+    }
+  ]
+}
