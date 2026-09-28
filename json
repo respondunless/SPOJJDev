@@ -1,123 +1,8 @@
-{
-  "elmType": "div",
-  "style": {
-    "background": "linear-gradient(135deg, #eef6fc 0%, #f7fbff 100%)",
-    "border": "1px solid #d5e4f2",
-    "border-radius": "12px",
-    "padding": "20px 22px",
-    "margin-bottom": "16px",
-    "box-shadow": "0 2px 6px rgba(0,0,0,0.05)"
-  },
-  "children": [
-    {
-      "elmType": "div",
-      "style": {
-        "display": "flex",
-        "align-items": "center",
-        "gap": "14px"
-      },
-      "children": [
-        {
-          "elmType": "div",
-          "style": {
-            "width": "44px",
-            "height": "44px",
-            "border-radius": "10px",
-            "background-color": "#dceefb",
-            "display": "flex",
-            "align-items": "center",
-            "justify-content": "center"
-          },
-          "children": [
-            {
-              "elmType": "span",
-              "attributes": {
-                "iconName": "Education"
-              },
-              "style": {
-                "font-size": "22px",
-                "color": "#0f6cbd"
-              }
-            }
-          ]
-        },
-        {
-          "elmType": "div",
-          "children": [
-            {
-              "elmType": "div",
-              "txtContent": "Professionalisation Support Application",
-              "style": {
-                "font-size": "21px",
-                "font-weight": "600",
-                "color": "#242424"
-              }
-            },
-            {
-              "elmType": "div",
-              "txtContent": "Apply for professional development support and funding.",
-              "style": {
-                "font-size": "13px",
-                "color": "#616161",
-                "margin-top": "4px"
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "elmType": "div",
-      "style": {
-        "margin-top": "14px",
-        "padding": "10px 12px",
-        "background-color": "#ffffff",
-        "border": "1px solid #e3e8ee",
-        "border-radius": "8px",
-        "display": "flex",
-        "align-items": "center",
-        "gap": "8px"
-      },
-      "children": [
-        {
-          "elmType": "span",
-          "attributes": {
-            "iconName": "Info"
-          },
-          "style": {
-            "color": "#0f6cbd"
-          }
-        },
-        {
-          "elmType": "span",
-          "txtContent": "Complete the required fields below. Your application will be routed for approval.",
-          "style": {
-            "font-size": "12px",
-            "color": "#424242"
-          }
-        }
-      ]
-    }
-  ]
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 {
   "sections": [
     {
-      "displayname": "👤 Employee details",
+      "displayname": "👤 1. Employee details",
       "fields": [
         "Name",
         "MyID",
@@ -128,7 +13,7 @@
       ]
     },
     {
-      "displayname": "🎓 Professionalisation details",
+      "displayname": "🎓 2. Professionalisation details",
       "fields": [
         "Professionalisation Name",
         "Professional Body",
@@ -140,12 +25,44 @@
       ]
     },
     {
-      "displayname": "💬 Justification",
+      "displayname": "💬 3. Justification",
       "fields": [
         "Funding Model Align Justify",
         "Professionalisation in Dev Plan",
         "Benefit our & NGA"
       ]
+    },
+    {
+      "displayname": "🔒 4. Application status & approvals",
+      "fields": [
+        "StatusApprovals",
+        "EmployeeApproveDate",
+        "ManagerApproveDate",
+        "FunctionalLeaderApproveDate",
+        "BudgetHolderApproveDate"
+      ]
+    }
+  ],
+  "fieldsettings": [
+    {
+      "name": "StatusApprovals",
+      "readonly": true
+    },
+    {
+      "name": "EmployeeApproveDate",
+      "readonly": true
+    },
+    {
+      "name": "ManagerApproveDate",
+      "readonly": true
+    },
+    {
+      "name": "FunctionalLeaderApproveDate",
+      "readonly": true
+    },
+    {
+      "name": "BudgetHolderApproveDate",
+      "readonly": true
     }
   ]
 }
