@@ -1,12 +1,12 @@
 {
   "elmType": "div",
   "style": {
-    "background": "linear-gradient(135deg, #f7fbff 0%, #eef6fc 100%)",
-    "border": "1px solid #d9e6f2",
-    "border-radius": "14px",
-    "padding": "22px 24px",
-    "margin": "4px 4px 18px 4px",
-    "box-shadow": "0 2px 8px rgba(0,0,0,0.06)"
+    "background": "linear-gradient(135deg, #eef6fc 0%, #f7fbff 100%)",
+    "border": "1px solid #d5e4f2",
+    "border-radius": "12px",
+    "padding": "20px 22px",
+    "margin-bottom": "16px",
+    "box-shadow": "0 2px 6px rgba(0,0,0,0.05)"
   },
   "children": [
     {
@@ -14,96 +14,69 @@
       "style": {
         "display": "flex",
         "align-items": "center",
-        "justify-content": "space-between",
-        "gap": "16px",
-        "flex-wrap": "wrap"
+        "gap": "14px"
       },
       "children": [
         {
           "elmType": "div",
           "style": {
+            "width": "44px",
+            "height": "44px",
+            "border-radius": "10px",
+            "background-color": "#dceefb",
             "display": "flex",
             "align-items": "center",
-            "gap": "14px"
+            "justify-content": "center"
           },
           "children": [
             {
-              "elmType": "div",
-              "style": {
-                "width": "46px",
-                "height": "46px",
-                "border-radius": "12px",
-                "background-color": "#e6f2fb",
-                "display": "flex",
-                "align-items": "center",
-                "justify-content": "center"
+              "elmType": "span",
+              "attributes": {
+                "iconName": "Education"
               },
-              "children": [
-                {
-                  "elmType": "span",
-                  "attributes": {
-                    "iconName": "Education"
-                  },
-                  "style": {
-                    "font-size": "24px",
-                    "color": "#0f6cbd"
-                  }
-                }
-              ]
-            },
-            {
-              "elmType": "div",
-              "children": [
-                {
-                  "elmType": "div",
-                  "txtContent": "Professionalisation Support Application",
-                  "style": {
-                    "font-size": "22px",
-                    "font-weight": "600",
-                    "color": "#242424",
-                    "line-height": "1.3"
-                  }
-                },
-                {
-                  "elmType": "div",
-                  "txtContent": "Complete the details below to submit your application for professional development support.",
-                  "style": {
-                    "font-size": "13px",
-                    "color": "#616161",
-                    "margin-top": "5px",
-                    "max-width": "760px"
-                  }
-                }
-              ]
+              "style": {
+                "font-size": "22px",
+                "color": "#0f6cbd"
+              }
             }
           ]
         },
         {
           "elmType": "div",
-          "style": {
-            "background-color": "#ffffff",
-            "border": "1px solid #d9e6f2",
-            "border-radius": "999px",
-            "padding": "7px 12px",
-            "font-size": "12px",
-            "font-weight": "600",
-            "color": "#0f6cbd"
-          },
-          "txtContent": "NGA People"
+          "children": [
+            {
+              "elmType": "div",
+              "txtContent": "Professionalisation Support Application",
+              "style": {
+                "font-size": "21px",
+                "font-weight": "600",
+                "color": "#242424"
+              }
+            },
+            {
+              "elmType": "div",
+              "txtContent": "Apply for professional development support and funding.",
+              "style": {
+                "font-size": "13px",
+                "color": "#616161",
+                "margin-top": "4px"
+              }
+            }
+          ]
         }
       ]
     },
     {
       "elmType": "div",
       "style": {
-        "margin-top": "18px",
-        "padding": "12px 14px",
+        "margin-top": "14px",
+        "padding": "10px 12px",
         "background-color": "#ffffff",
-        "border": "1px solid #e5e5e5",
-        "border-radius": "10px",
+        "border": "1px solid #e3e8ee",
+        "border-radius": "8px",
         "display": "flex",
-        "align-items": "flex-start",
-        "gap": "10px"
+        "align-items": "center",
+        "gap": "8px"
       },
       "children": [
         {
@@ -112,14 +85,12 @@
             "iconName": "Info"
           },
           "style": {
-            "font-size": "16px",
-            "color": "#0f6cbd",
-            "margin-top": "1px"
+            "color": "#0f6cbd"
           }
         },
         {
-          "elmType": "div",
-          "txtContent": "Please provide complete and accurate information. Required fields are marked by SharePoint.",
+          "elmType": "span",
+          "txtContent": "Complete the required fields below. Your application will be routed for approval.",
           "style": {
             "font-size": "12px",
             "color": "#424242"
@@ -142,10 +113,11 @@
 
 
 
+
 {
   "sections": [
     {
-      "displayname": "Employee details",
+      "displayname": "👤 Employee details",
       "fields": [
         "Name",
         "MyID",
@@ -156,7 +128,7 @@
       ]
     },
     {
-      "displayname": "Professionalisation details",
+      "displayname": "🎓 Professionalisation details",
       "fields": [
         "Professionalisation Name",
         "Professional Body",
@@ -168,7 +140,7 @@
       ]
     },
     {
-      "displayname": "Justification",
+      "displayname": "💬 Justification",
       "fields": [
         "Funding Model Align Justify",
         "Professionalisation in Dev Plan",
@@ -177,46 +149,3 @@
     }
   ]
 }
-
-
-
-
-{
-  "elmType": "div",
-  "style": {
-    "margin": "18px 4px 4px 4px",
-    "padding": "14px 18px",
-    "background-color": "#fafafa",
-    "border": "1px solid #e5e5e5",
-    "border-radius": "10px",
-    "display": "flex",
-    "align-items": "center",
-    "gap": "10px"
-  },
-  "children": [
-    {
-      "elmType": "span",
-      "attributes": {
-        "iconName": "Shield"
-      },
-      "style": {
-        "font-size": "16px",
-        "color": "#0f6cbd"
-      }
-    },
-    {
-      "elmType": "div",
-      "txtContent": "Your application will be reviewed through the NGA approval process.",
-      "style": {
-        "font-size": "12px",
-        "color": "#616161"
-      }
-    }
-  ]
-}
-
-
-
-
-
-
