@@ -33,3 +33,75 @@
     }
   ]
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+{
+  "elmType": "div",
+  "style": {
+    "background-color": "#f5f9fd",
+    "border-bottom": "1px solid #d0e2f2",
+    "padding": "18px 20px",
+    "margin-bottom": "12px",
+    "border-radius": "6px"
+  },
+  "children": [
+    {
+      "elmType": "div",
+      "style": {
+        "display": "flex",
+        "align-items": "center",
+        "gap": "12px"
+      },
+      "children": [
+        {
+          "elmType": "span",
+          "attributes": {
+            "iconName": "Education"
+          },
+          "style": {
+            "font-size": "28px",
+            "color": "#0f6cbd"
+          }
+        },
+        {
+          "elmType": "div",
+          "children": [
+            {
+              "elmType": "div",
+              "txtContent": "Professionalisation Support Application",
+              "style": {
+                "font-size": "20px",
+                "font-weight": "600",
+                "color": "#242424"
+              }
+            },
+            {
+              "elmType": "div",
+              "txtContent": "Complete the details below to submit your application.",
+              "style": {
+                "font-size": "13px",
+                "color": "#616161",
+                "margin-top": "4px"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
