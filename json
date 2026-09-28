@@ -1,7 +1,7 @@
 {
   "sections": [
     {
-      "displayname": "Employee details",
+      "displayname": "👤 Employee details",
       "fields": [
         "Name",
         "MyID",
@@ -12,13 +12,23 @@
       ]
     },
     {
-      "displayname": "Professionalisation details",
+      "displayname": "🎓 Professionalisation details",
       "fields": [
         "Professionalisation Name",
         "Professional Body",
         "Cost",
         "Duration of Professionalisation",
-        "Funding Model Alignment"
+        "Funding Model Alignment",
+        "Cost Centre",
+        "FunctionalAreaAlignmentNew"
+      ]
+    },
+    {
+      "displayname": "💬 Justification",
+      "fields": [
+        "Funding Model Align Justify",
+        "Professionalisation in Dev Plan",
+        "Benefit our & NGA"
       ]
     }
   ]
