@@ -1,0 +1,3 @@
+dentity Standards for Power Platform Automation
+
+All automated and unattended workloads in Power Platform — flows, connectors, and integrations — must authenticate using workload identities (managed identities or service principals) rather than user accounts. User accounts must not be used as service accounts; any existing instances are to be migrated. This aligns with Microsoft's MFA enforcement direction, which requires user identities to complete MFA and is incompatible with unattended automation, and with Microsoft's published guidance to migrate user-based service accounts to workload identities.
